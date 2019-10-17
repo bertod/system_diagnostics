@@ -96,10 +96,10 @@ def main():
         pd_series_closest_cluster_center_indexes = cluster_pd_series(
             pd_series=pd_dataevent_transposed_samples,
             cluster_amount=label_amount)
-    data_viewer.scatter_pd_series_2d(pd_dataevent_transposed_samples,
-                                     pd_series_cluster_labels,
-                                     pd_series_cluster_centers,
-                                     pd_series_closest_cluster_center_indexes)
+    # data_viewer.scatter_pd_series_2d(pd_dataevent_transposed_samples,
+    #                                  pd_series_cluster_labels,
+    #                                  pd_series_cluster_centers,
+    #                                  pd_series_closest_cluster_center_indexes)
 
 
 if __name__ == '__main__':

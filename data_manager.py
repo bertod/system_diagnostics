@@ -19,7 +19,7 @@
     along with this program.  If not, see
     <http://www.gnu.org/licenses/>.
 """
-
+ 
 
 import sys
 import os
@@ -270,6 +270,9 @@ class CustomerHostDiagnostics(CustomerHostData):
         self.measure_pd_dataevent_frequency_samples = []
         self.measure_pd_dataevent_transposed_samples = []
         self.measure_pd_dataevent_sample_timestamps = []
+
+        self._resampling_period_string = '' #berto
+ 
         if local_data:
             self.shelve_measurements(load_shelve=True)
         else:
@@ -394,6 +397,7 @@ class CustomerHostDiagnostics(CustomerHostData):
                     shelve_file['measure_pd_dataevent_transposed_samples']
                 self.measure_pd_dataevent_sample_timestamps = \
                     shelve_file['measure_pd_dataevent_sample_timestamps']
+                self._resampling_period_string = shelve_file['_resampling_period_string']  #berto
                 shelve_file.close()
                 shelve_message += 'has been LOADED from the shelve file.'
             else:
@@ -422,6 +426,7 @@ class CustomerHostDiagnostics(CustomerHostData):
                 self.measure_pd_dataevent_transposed_samples
             shelve_file['measure_pd_dataevent_sample_timestamps'] = \
                 self.measure_pd_dataevent_sample_timestamps
+            shelve_file['_resampling_period_string'] = self._resampling_period_string #berto
             shelve_file.close()
             shelve_message += 'has been SAVED in the shelve file.'
         print(shelve_message)
@@ -435,8 +440,9 @@ class CustomerHostDiagnostics(CustomerHostData):
             if verbose:
                 print('Data sampler | pad_pd_dataframes DONE.')
 
-            self.measure_pd_dataframes = data_sampler.resample_pd_dataframes(
+            self.measure_pd_dataframes, self._resampling_period_string = data_sampler.resample_pd_dataframes(
                 self.measure_pd_dataframes)
+              
             if verbose:
                 print('Data sampler | resample_pd_dataframes DONE.')
 

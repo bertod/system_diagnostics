@@ -26,7 +26,7 @@ from numpy.random import default_rng
 from scipy.interpolate import interp1d
 from scipy.optimize import curve_fit
 from scipy.fftpack import fft, fftfreq, fftshift, ifft
-from scipy.signal import spectrogram, welch, cwt, ricker
+from scipy.signal import spectrogram, welch
 import matplotlib.pyplot as plt
 import pandas as pd
 from pandas.plotting import register_matplotlib_converters
@@ -201,14 +201,13 @@ def main():
     lpf_harmonic_amount = 10
     lpf_cutoff_frequency = 0.1
 
-    plot_lab = True
+    plot_lab = False
     plot_phase = True
     scatter_noisy = True
     scatter_interpolation_linear = False
     scatter_interpolation_cubic = False
-    scatter_fitting = True
+    scatter_fitting = False
     plot_spectrogram_psd = False
-    plot_wavelet_ricker = False
 
     sampling_times = np.linspace(0, processing_period_s, sampling_points)
     harmonic_base = np.sin(harmonic_base_period * sampling_times + phase) *\
@@ -359,41 +358,9 @@ def main():
         ax[1].set_xlabel('[Hz]')
         plt.show()
 
-    if plot_wavelet_ricker:
-        fig, ax = plt.subplots(2)
-        for sampling_time in sampling_times:
-            ax[0].axvline(sampling_time, c='black', alpha=0.02)
-        ax[0].set_xlabel('[s]')
-        ax[0].scatter(pd_dataframe['measures_clean'].index.second,
-                      pd_dataframe['measures_clean'].values,
-                      marker='o',
-                      c='green',
-                      alpha=0.3)
-        if noise_amplitude > 0:
-            if scatter_noisy:
-                ax[0].scatter(pd_dataframe['measures_noisy'].index.second,
-                              pd_dataframe['measures_noisy'].values,
-                              marker='o',
-                              c='red')
-
-        measures_time = pd_dataframe['measures_clean'].values
-        wavelet_length = 30
-        measures_wavelet_widths = np.arange(1, wavelet_length)
-        measures_wavelet_ricker = cwt(measures_time,
-                                      ricker,
-                                      measures_wavelet_widths)
-        ax[1].set_xlabel('[wavelet]')
-        ax[1].imshow(measures_wavelet_ricker,
-                     extent=[-1, 1, 1, wavelet_length],
-                     cmap='coolwarm',
-                     aspect='auto',
-                     vmax=abs(measures_wavelet_ricker).max(),
-                     vmin=-abs(measures_wavelet_ricker).max())
-        plt.show()
-
-    # plot_signal_filter(pd_series,
-    #                    lpf_harmonic_amount=lpf_harmonic_amount,
-    #                    lpf_cutoff_frequency=lpf_cutoff_frequency)
+    plot_signal_filter(pd_series,
+                       lpf_harmonic_amount=lpf_harmonic_amount,
+                       lpf_cutoff_frequency=lpf_cutoff_frequency)
 
 
 if __name__ == '__main__':

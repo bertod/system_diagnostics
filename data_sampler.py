@@ -155,7 +155,7 @@ def pad_pd_dataframes(pd_dataframes, timestamp_start, timestamp_end,
                 pd_padded_dataframes.append(pd_padded_dataframe)
     return pd_padded_dataframes
 
-
+ 
 def resample_pd_dataframes(pd_dataframes, sampling_precision='1s'):
     """
        For each series in each dataframe, resample_pd_dataframes
@@ -173,9 +173,9 @@ def resample_pd_dataframes(pd_dataframes, sampling_precision='1s'):
             if not pd_dataframe.empty:
                 pd_resampled_dataframe = pd_dataframe.resample(
                     resampling_period_string).pad()
+                #print("LEN not resampled > ", len(pd_dataframe), "VS LEN resampled > ", len(pd_resampled_dataframe))
                 pd_resampled_dataframes.append(pd_resampled_dataframe)
-    return pd_resampled_dataframes
-
+    return (pd_resampled_dataframes,resampling_period_string)
 
 def fill_pd_dataframes(pd_dataframes):
     pd_filled_dataframes = []
@@ -313,6 +313,13 @@ def main():
                                            freq='5T', tz=time_zone)
     utc_index_test_01 = pd.to_datetime(timezone_index_test_01, utc=True)
     pd_series_test_01 = pd.Series(data_test_01, index=utc_index_test_01)
+
+    print('data test 01: ',data_test_01)
+    print('\ntimezone_index_test_01: ',timezone_index_test_01)
+    print('\nutc_index_test_01: ',utc_index_test_01)
+    print('\npd_series_test_01: ',pd_series_test_01)
+
+
     data_test_02 = np.random.normal(0, 1, 6)
     timezone_index_test_02 = pd.date_range(timestamp_start_02, periods=6,
                                            freq='5T', tz=time_zone)
@@ -353,10 +360,10 @@ def main():
     pd_dataevent_transposed_samples, pd_dataevent_sample_timestamps = \
         transpose_dataevents(pd_dataevent_samples)
     print('pd_joineddataframe:')
-    print(pd_joineddataframe)
+    #print(pd_joineddataframe)
     print('')
     print('pd_dataevent_samples:')
-    print(pd_dataevent_samples)
+    #print(pd_dataevent_samples)
     print('')
     # print('pd_dataevent_sample_length:')
     # print(pd_dataevent_sample_length)

@@ -1,10 +1,12 @@
-# pycharm folder
+#other files
+others/
+run_gtg_command.txt
+results/
+
+# pycharm
 .idea
 
-# documentation folder
-docs
-
-# private files
+# System diagnostics
 diagnostics_map*
 private_*
 
