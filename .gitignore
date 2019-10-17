@@ -2,6 +2,7 @@
 others/
 run_gtg_command.txt
 results/
+classes.json
 
 # pycharm
 .idea
