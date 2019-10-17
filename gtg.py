@@ -166,7 +166,20 @@ class GroudTruthGenerator:
                 self.anomaly_periods_resample.append((start,end))
         print('Extracting the anomaly periods after resampling: DONE')
         
-
+    
+    def check_fully_inclusion(self,df_events):
+        #anomalies = gtg_obj.anomaly_periods_resample
+        for ind in df_events.index:
+            period = ind.split(" - ")
+            for a in gtg_obj.anomaly_periods_resample:
+                # t(event) start < t(anomaly) start and t(event) end > t(anomaly) end
+                if pd.to_datetime(period[0]) < a[0] and pd.to_datetime(period[1]) > a[1]:
+                    print(a[0]," - ",a[1]," is fully included in the event: ",period[0]," - ",period[1])
+                elif pd.to_datetime(period[0]) < a[0] and pd.to_datetime(period[1])+pd.Timedelta(1,'m') > a[1]:
+                    print(a[0]," - ",a[1]," is partially included (using a safety band on the right) in ",period[0]," - ",period[1])
+                elif pd.to_datetime(period[0])-pd.Timedelta(1,'m') < a[0] and pd.to_datetime(period[1]) > a[1]:
+                    print(a[0]," - ",a[1]," is partially included (using a safety band on the left) in ",period[0]," - ",period[1])
+   
 
 #%%
 ###### helper functions ######
@@ -214,7 +227,7 @@ def get_event_microfeatures(list_events,feature_engineering):
             events_dict[' - '.join(event_timespan)] = microfeatures_list
         df_events_microfeatures = pd.DataFrame(events_dict)
         print('---Bulding the Event Dataframe with microfeatures: DONE')
-        return df_events_microfeatures
+        return df_events_microfeatures.T
     else:
         ## work on all events - shape: n.events x 16200 (micro)features
         print('\n---Bulding the Event Dataframe with microfeatures (without feature engineering): STARTED')
@@ -278,9 +291,67 @@ def main():
     print("Anomalous time periods labeled by the human ",args.user, " (after resampling)")
     gtg_obj.get_anomaly_periods_after_resample()
     #print(gtg_obj.anomaly_periods_resample)
+    print("Checking for anomalous period fully included in our events")
+    gtg_obj.check_fully_inclusion(df_events_microfeatures)
 
 
 if __name__ == '__main__':
     main()
 
 
+########################
+##### testing code #####
+########################
+#%%
+#testing cells
+list_events = import_data_events("2019-02-04 00:00:01","2019-02-10 00:59:59")
+df_events_microfeatures = get_event_microfeatures(list_events,True)
+#%%
+
+perio = get_resampling_period_string()
+print(perio)
+gtg_obj = GroudTruthGenerator('Peter', 'anomaly_normal_20191016', "2019-02-04 00:00:01","2019-02-10 00:59:59", 'classes.json')
+gtg_obj.get_ground_truth_periods()
+print(gtg_obj.anomaly_periods)
+gtg_obj.get_ground_truth_continuous_signal()
+print('\n GT Signal')
+print(gtg_obj.gt_series)
+gtg_obj.resample_ground_truth_continuous_signal(perio)
+gtg_obj.get_anomaly_periods_after_resample()
+print(len(gtg_obj.gt_series_resample[gtg_obj.gt_series_resample==1]))
+#for a in gtg_obj.anomaly_periods_resample:
+    #print(a)
+#print(anomaly_periods_resample)
+
+#%%
+anomalies = gtg_obj.anomaly_periods_resample
+for ind in df_events_microfeatures.index:
+    period = ind.split(" - ")
+    #print(period)
+    #print(pd.to_datetime(period[0]))
+    for a in anomalies:
+        if pd.to_datetime(period[0]) < a[0] and pd.to_datetime(period[1]) > a[1]:
+            print(a[0]," - ",a[1]," is fully included in ",period[0]," - ",period[1])
+        
+#%%
+gtg_obj.check_fully_inclusion(df_events_microfeatures)
+
+#%%
+#%%
+
+## partiallly included
+anomalies = gtg_obj.anomaly_periods_resample
+for ind in df_events_microfeatures.index:
+    period = ind.split(" - ")
+    #print(period)
+    #print(pd.to_datetime(period[0]))
+    for a in anomalies:
+        if pd.to_datetime(period[0]) < a[0] and pd.to_datetime(period[1]) > a[1]:
+            print(a[0]," - ",a[1]," is fully included in ",period[0]," - ",period[1])
+        elif pd.to_datetime(period[0]) < a[0] and pd.to_datetime(period[1])+pd.Timedelta(1,'m') > a[1]:
+            print(a[0]," - ",a[1]," is partially included in ",period[0]," - ",period[1])
+        elif pd.to_datetime(period[0])-pd.Timedelta(1,'m') < a[0] and pd.to_datetime(period[1]) > a[1]:
+            print(a[0]," - ",a[1]," is partially included in ",period[0]," - ",period[1])
+
+
+#%%
