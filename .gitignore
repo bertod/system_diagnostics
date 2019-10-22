@@ -5,6 +5,7 @@ results/
 classes.json
 testing.py
 feature_selector_test.py
+stl/
 
 # pycharm
 .idea
