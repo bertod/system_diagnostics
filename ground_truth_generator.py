@@ -196,7 +196,8 @@ class GroudTruthGenerator:
         print('---Extracting the anomaly periods after resampling: DONE')
         
     
-    def check_eventi_anomaly_inclusion(self,df_events):
+    def check_event_anomaly_inclusion(self,df_events):
+        df_events_label = pd.DataFrame(columns=['label'])
         print("\n---Checking for anomalous period fully/partially included in our events: STARTED")
         #anomalies = gtg_obj.anomaly_periods_resample
         for ind in df_events.index:
@@ -206,25 +207,38 @@ class GroudTruthGenerator:
                 if pd.to_datetime(period[0]) < a[0] and pd.to_datetime(period[1]) > a[1]:
                     print(a[0]," - ",a[1]," is fully included in the event: ",period[0]," - ",period[1])
                     df_events.loc[ind,'class'] = "A" #anomaly
+                    df_events_label.loc[pd.to_datetime(period[0]),'label'] = "A"
+                    break
                 elif pd.to_datetime(period[0]) < a[0] and pd.to_datetime(period[1])+pd.Timedelta(1,'m') > a[1]:
                     print(a[0]," - ",a[1]," is partially included (using a safety band on the right) in ",period[0]," - ",period[1])
                     df_events.loc[ind,'class'] = "A" #anomaly
+                    df_events_label.loc[pd.to_datetime(period[0]),'label'] = "A"
+                    break
                 elif pd.to_datetime(period[0])-pd.Timedelta(1,'m') < a[0] and pd.to_datetime(period[1]) > a[1]:
                     print(a[0]," - ",a[1]," is partially included (using a safety band on the left) in ",period[0]," - ",period[1])
                     df_events.loc[ind,'class'] = "A" #anomaly
+                    df_events_label.loc[pd.to_datetime(period[0]),'label'] = "A"
+                    break
                 elif pd.to_datetime(period[0]) > a[0] and pd.to_datetime(period[1]) < a[1]:
                     print("The anomaly ",a[0]," - ",a[1]," includes the event ",period[0]," - ",period[1])
                     df_events.loc[ind,'class'] = "A" #anomaly
+                    df_events_label.loc[pd.to_datetime(period[0]),'label'] = "A"
+                    break
                 elif pd.to_datetime(period[0]) > a[0]-pd.Timedelta(1,'m') and pd.to_datetime(period[1]) < a[1]:
                     print("The anomaly ",a[0]," - ",a[1]," partially includes (using a safety band on the left) the event ",period[0]," - ",period[1])
                     df_events.loc[ind,'class'] = "A" #anomaly
+                    df_events_label.loc[pd.to_datetime(period[0]),'label'] = "A"
+                    break
                 elif pd.to_datetime(period[0]) > a[0] and pd.to_datetime(period[1]) < a[1]+pd.Timedelta(1,'m'):
                     print("The anomaly ",a[0]," - ",a[1]," partially includes (using a safety band on the right) the event ",period[0]," - ",period[1])
                     df_events.loc[ind,'class'] = "A" #anomaly
+                    df_events_label.loc[pd.to_datetime(period[0]),'label'] = "A"
+                    break
                 else:
                     df_events.loc[ind,'class'] = "N" #normal - not an anomaly
+                    df_events_label.loc[pd.to_datetime(period[0]),'label'] = "N"
         print("---Checking for anomalous period fully/partially included in our events: DONE")
-        return df_events
+        return (df_events,df_events_label)
 
 #%%
 ###### helper functions ######
@@ -351,9 +365,10 @@ def main():
     print("\nAnomalous time periods labeled by the human ",args.labeler, " (after resampling)")
     gtg_obj.get_anomaly_periods_after_resample()
     
-    df_event_label = gtg_obj.check_eventi_anomaly_inclusion(df_events_microfeatures)
-    event_label_series = pd.Series(df_event_label['class'], index= df_event_label.index)
+    df_events_microfeature_label,df_events_label = gtg_obj.check_event_anomaly_inclusion(df_events_microfeatures)
+    event_label_series = pd.Series(df_events_label['label'], index= df_events_label.index)
 
 
 if __name__ == '__main__':
     main()
+
