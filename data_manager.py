@@ -250,6 +250,8 @@ class CustomerHostDiagnostics(CustomerHostData):
         self.host_name = host_name
         self.measurements = []
         self.load_measurements()
+        self.groundtruths = [] #berto
+        self.load_ground_truths() #berto
         self.time_from = time_from
         self.time_to = time_to
         self.time_zone = time_zone
@@ -305,6 +307,16 @@ class CustomerHostDiagnostics(CustomerHostData):
             if host['host_name'] == self.host_name:
                 self.measurements = host['measurements']
         if not self.measurements:
+            raise data_exceptions.DataNotFound(data_name=self.host_name,
+                                               source_name='hosts')
+        return True
+
+    #berto
+    def load_ground_truths(self):
+        for host in self.hosts:
+            if host['host_name'] == self.host_name:
+                self.groundtruths = host['ground_truths']
+        if not self.groundtruths:
             raise data_exceptions.DataNotFound(data_name=self.host_name,
                                                source_name='hosts')
         return True
