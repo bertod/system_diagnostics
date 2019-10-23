@@ -131,48 +131,8 @@ def plot_signal_filter(pd_series,
             pd_series,
             lpf_harmonic_amount=lpf_harmonic_amount,
             lpf_cutoff_frequency=lpf_cutoff_frequency)
-    cutoff_frequencies_mask = np.invert(passed_frequencies_mask)
-    if not show_direct_signal:
-        passed_frequencies_mask[0] = False
-    for measures_frequency in measures_frequencies:
-        ax[1].axvline(measures_frequency, c='black', alpha=0.02)
-    ax[1].set_xlabel('[Hz]')
-    ax[1].scatter(measures_frequencies[passed_frequencies_mask],
-                  measures_power[passed_frequencies_mask],
-                  s=10,
-                  c='#5dade2')
-    ax[1].scatter(measures_frequencies[cutoff_frequencies_mask],
-                  measures_power[cutoff_frequencies_mask],
-                  s=10,
-                  c='red')
-    passed_half_frequencies_mask_size = int(passed_frequencies_mask.size/2)
-    passed_half_frequencies_mask = passed_frequencies_mask[:]
-    passed_half_frequencies_mask[passed_half_frequencies_mask_size:] = False
-    passed_half_frequencies_mask_length = sum(passed_half_frequencies_mask)
-    passed_half_frequencies = np.linspace(1,
-                                          passed_half_frequencies_mask_length,
-                                          passed_half_frequencies_mask_length)
-    half_measures_power = measures_power[passed_half_frequencies_mask]
-    for passed_half_frequency in passed_half_frequencies:
-        ax[2].axvline(passed_half_frequency, c='black', alpha=0.02)
-    ax[2].scatter(passed_half_frequencies,
-                  half_measures_power,
-                  s=10,
-                  c='#5dade2')
-    ax[2].set_xlabel('[feat]')
-    if show_phase_signal:
-        for measures_frequency in measures_frequencies:
-            ax[3].axvline(measures_frequency, c='black', alpha=0.02)
-        ax[3].set_xlabel('[rad]')
-        ax[3].scatter(measures_frequencies[passed_frequencies_mask],
-                      measures_phases[passed_frequencies_mask],
-                      s=10,
-                      c='#5dade2')
-        ax[3].scatter(measures_frequencies[cutoff_frequencies_mask],
-                      measures_phases[cutoff_frequencies_mask],
-                      s=10,
-                      c='red')
-    ax[0].plot(sampling_times, measures_lpf, c='#5dade2')
+    
+    ax[0].plot(sampling_times, measures_lpf, c='red')
     plt.show()
     return True
 

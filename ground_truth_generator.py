@@ -10,6 +10,7 @@ from sklearn.svm import OneClassSVM
 import shelve
 import argparse
 import json
+import seaborn as sns
 
 import data_manager
 import data_viewer
@@ -20,22 +21,38 @@ import signal_processor
 ## class definition
 class GroudTruthGenerator:
 
-    def __init__(self,labeler = '' ,model = '', observation_start = '', observation_end ='' , json_path = '',groundtruths_json = [] ):
+    def __init__(self,customer ='' ,network='',source='',db='',host='',labeler = '' ,model = '', experiment_start = '', experiment_end ='', n_ago='', event_period ='',guardperiod = '' , json_path = '',groundtruths_json = [] ):
+        
+        self.customer = customer
+        self.network = network
+        self.source = source
+        self.db = db
+        self.host = host        
         self.labeler = labeler
         self.model = model
-        self.observation_start = observation_start
-        self.observation_end = observation_end
+        self.experiment_start = experiment_start
+        self.experiment_end = experiment_end
+        self.n_ago = n_ago
         self.json_path = json_path
         self.json_obj = ''
-        self.load_json()
         self.anomaly_periods = []
         self.anomaly_periods_resample = []
         self.gt_series = pd.Series()
         self.gt_series_resample = pd.Series()
-        self.groundtruths_json = groundtruths_json
+        self.groundtruths_json = []
         self.invalid_class_value = ''
         self.periods_list = []
         self.class_dict = {}
+        self.list_events = []
+        self.event_period = ''
+        self.guardperiod = ''
+        self._resampling_period_string = ''
+        self.df_events_microfeatures = None
+        self.df_events_label = pd.DataFrame(columns=['label'])
+
+        #self.load_json()
+        self.import_data()
+
         print("\nGTG instantiated\n")
 
     def load_json(self):
@@ -51,6 +68,93 @@ class GroudTruthGenerator:
             return None
         self.json_obj = json_object
         #return json_object
+
+    ########################################################################
+    #import via data_manager the events dataframe                          #
+    ########################################################################
+    def import_data(self):
+        experiment_start = pd.to_datetime('today',format='%Y-%m-%d %H:%M:%S')
+        experiment_start = pd.to_datetime(str(experiment_start).split('.')[0])
+        if self.n_ago != '' and (not self.experiment_start and not self.experiment_end) :
+            delta = [s for s in self.n_ago if s.isdigit()]
+            delta = ''.join(delta)
+            if 'day' in self.n_ago:
+                experiment_end = experiment_start - pd.to_timedelta(int(delta),'days')
+            elif 'hour' in self.n_ago:
+                experiment_end = experiment_start - pd.to_timedelta(int(delta),'hours')
+        else:
+            experiment_start = self.experiment_start 
+            experiment_end = self.experiment_end
+
+        if self.event_period == '':
+            event_period = '15m'
+        else:
+            event_period = self.event_period
+
+        print(experiment_start)
+        print(experiment_end)
+        print('\n---Importing the list of Events Dataframes via data manager: STARTED')
+        fabbri1905_fabax6pdb = data_manager.CustomerHostDiagnostics(
+                self.customer, self.network, self.source, self.db, self.host,
+                str(experiment_start), str(experiment_end), 'Europe/Rome',
+                'diagnostics_map.json', event_minimum_period=event_period, local_data=True,
+                database_queries=True, preprocess_data=True)
+
+        self.list_events = fabbri1905_fabax6pdb.measure_pd_dataevent_samples
+        self.get_event_microfeatures(True)
+        self._resampling_period_string = fabbri1905_fabax6pdb._resampling_period_string
+        self.groundtruths_json = fabbri1905_fabax6pdb.groundtruths
+        #print(list_event)
+        print('---Importing data via data manager: DONE')
+        #return (list_event,_resampling_period_string,ground_truths)
+   
+   
+    ########################################################################
+    #combine all the events and generate a dataframe with microfeatures    #
+    #it can also apply feature engineering (mean and std method)           #
+    ########################################################################
+    def get_event_microfeatures(self,feature_engineering):
+        if feature_engineering == True:
+            ## work on all events - shape: n.events x 36features (mean + variance)
+            print('\n---Bulding the Event Dataframe with microfeatures (mean and std method): STARTED')
+            events_dict = {}
+            for j, event in enumerate(self.list_events):
+                if j in [250,500,750,900,1000,len(self.list_events)-1]:
+                    print('Event modelling: event dataframe n',j)
+                microfeatures_list = []
+                event_timespan = []
+                count = 0
+                for i in event.columns:
+                    microfeatures_list.append(event.loc[:,i].mean())
+                    microfeatures_list.append(event.loc[:,i].std())
+                event_timespan.append(str(event.index[0]))
+                event_timespan.append(str(event.index[len(event)-1]))
+                events_dict[' - '.join(event_timespan)] = microfeatures_list
+            df_events_microfeatures = pd.DataFrame(events_dict)
+            self.df_events_microfeatures = df_events_microfeatures.T
+            print('---Bulding the Event Dataframe with microfeatures: DONE')
+            #return df_events_microfeatures.T
+        else:
+            ## work on all events - shape: n.events x 16200 (micro)features
+            print('\n---Bulding the Event Dataframe with microfeatures (without feature engineering): STARTED')
+            events_dict = {}
+            for j, event in enumerate(self.list_events):
+                if j in [250,500,750,900,1000,len(self.list_events)-1]:
+                    print('Dataframe n',j)
+                microfeatures_list = []
+                event_timespan = []
+                count = 0
+                for i in event.index:
+                    microfeatures_list = microfeatures_list + event.loc[i,:].values.tolist()
+                    if count == 0 or count == len(event)-1:
+                        event_timespan.append(str(i))
+                    count += 1
+                events_dict['-'.join(event_timespan)] = microfeatures_list
+            df_events_microfeatures = pd.DataFrame(events_dict)
+            self.df_events_microfeatures = df_events_microfeatures.T
+            print('\n---Bulding the Event Dataframe with microfeatures (without feature engineering): DONE')
+        #return df_events_microfeatures.T
+
     
     ########################################################################
     #load period of anomaly (Actual GroundTruth), recorded in the json file#
@@ -63,7 +167,7 @@ class GroudTruthGenerator:
                     if model['model_name'].lower().strip() == self.model.lower().strip():
                         self.invalid_class_value = model['invalid_class_value']
                         
-                        for period in model['periods']: #filter period of observation
+                        for period in model['periods']: #filter period of Experiment
                             self.periods_list.append((period['period_start'],period['period_end']))
                 
                         flag = False #it is True when the class_name 'anomaly' is found in the json
@@ -94,14 +198,14 @@ class GroudTruthGenerator:
         time_zone = 'Europe/Rome'
         #time_zone = 'GMT' #corresponds to UTC
         prev = ''
-        obs_start = pd.to_datetime(self.observation_start).tz_localize(time_zone)
-        obs_end = pd.to_datetime(self.observation_end).tz_localize(time_zone)
+        exp_start = pd.to_datetime(self.experiment_start).tz_localize(time_zone)
+        exp_end = pd.to_datetime(self.experiment_end).tz_localize(time_zone)
 
         for ps,pe in self.periods_list: #labeling period start, period end
             ps = str(pd.to_datetime(ps).tz_convert(time_zone))
             pe = str(pd.to_datetime(pe).tz_convert(time_zone))
             if prev == '':
-                timezone_index = pd.date_range(str(obs_start),ps, freq='1T',closed = 'left')
+                timezone_index = pd.date_range(str(exp_start),ps, freq='1T',closed = 'left')
                 utc_index = pd.to_datetime(timezone_index, utc=True)
                 series_list.append(pd.Series([int(self.invalid_class_value)] * len(utc_index), index=utc_index))
             else: 
@@ -140,7 +244,7 @@ class GroudTruthGenerator:
                 series_list.append(pd.Series([0] * len(utc_index), index=utc_index))
 
         if not prev == '':
-            timezone_index = pd.date_range(prev,str(obs_end), freq='1T', closed = 'right')
+            timezone_index = pd.date_range(prev,str(exp_end), freq='1T', closed = 'right')
             utc_index = pd.to_datetime(timezone_index, utc=True)
             series_list.append(pd.Series([int(self.invalid_class_value)] * len(utc_index), index=utc_index))
 
@@ -155,9 +259,9 @@ class GroudTruthGenerator:
     #resample the continuous signal with the resampling period used on the #
     #original series                                                       #                                      
     ########################################################################
-    def resample_ground_truth_continuous_signal(self,resampling_period):
+    def resample_ground_truth_continuous_signal(self):
         print('\n---Resampling the GroundTruth continuous signal: STARTED')
-        self.gt_series_resample = self.gt_series.resample(resampling_period).pad()
+        self.gt_series_resample = self.gt_series.resample(self._resampling_period_string).pad()
         print('---Resampling the GroundTruth continuous signal: DONE')
 
     def get_anomaly_periods_after_resample(self):
@@ -196,179 +300,149 @@ class GroudTruthGenerator:
         print('---Extracting the anomaly periods after resampling: DONE')
         
     
-    def check_event_anomaly_inclusion(self,df_events):
-        df_events_label = pd.DataFrame(columns=['label'])
+    def check_event_anomaly_inclusion(self):
+        
         print("\n---Checking for anomalous period fully/partially included in our events: STARTED")
         #anomalies = gtg_obj.anomaly_periods_resample
-        for ind in df_events.index:
+        if self.guardperiod == '':
+            self.guardperiod = '60'
+        for ind in self.df_events_microfeatures.index:
             period = ind.split(" - ")
+            event_labels = []
+            event_msg = []
             for a in self.anomaly_periods_resample:
                 # t(event) start < t(anomaly) start and t(event) end > t(anomaly) end
                 if pd.to_datetime(period[0]) < a[0] and pd.to_datetime(period[1]) > a[1]:
-                    print(a[0]," - ",a[1]," is fully included in the event: ",period[0]," - ",period[1])
-                    df_events.loc[ind,'class'] = "A" #anomaly
-                    df_events_label.loc[pd.to_datetime(period[0]),'label'] = "A"
-                    break
-                elif pd.to_datetime(period[0]) < a[0] and pd.to_datetime(period[1])+pd.Timedelta(1,'m') > a[1]:
-                    print(a[0]," - ",a[1]," is partially included (using a safety band on the right) in ",period[0]," - ",period[1])
-                    df_events.loc[ind,'class'] = "A" #anomaly
-                    df_events_label.loc[pd.to_datetime(period[0]),'label'] = "A"
-                    break
-                elif pd.to_datetime(period[0])-pd.Timedelta(1,'m') < a[0] and pd.to_datetime(period[1]) > a[1]:
-                    print(a[0]," - ",a[1]," is partially included (using a safety band on the left) in ",period[0]," - ",period[1])
-                    df_events.loc[ind,'class'] = "A" #anomaly
-                    df_events_label.loc[pd.to_datetime(period[0]),'label'] = "A"
-                    break
+                    #print(a[0]," - ",a[1]," is fully included in the event: ",period[0]," - ",period[1])
+                    #self.df_events_microfeatures.loc[ind,'label'] = 1 #anomaly
+                    #self.df_events_label.loc[pd.to_datetime(period[0]),'label'] = 1
+                    event_labels.append(1)
+                    msg = str(a[0])+" - "+str(a[1])+" is fully included in the event: "+period[0]+" - "+period[1]
+                    event_msg.append(a[0]," - ",a[1]," is fully included in the event: ",period[0]," - ",period[1])
+                    #break
+                elif pd.to_datetime(period[0]) < a[0] and pd.to_datetime(period[1])+pd.Timedelta(self.guardperiod,'s') > a[1]:
+                    #print(a[0]," - ",a[1]," is partially included (using a safety band on the right) in ",period[0]," - ",period[1])
+                    #self.df_events_microfeatures.loc[ind,'label'] = 1 #anomaly
+                    #self.df_events_label.loc[pd.to_datetime(period[0]),'label'] = "1"
+                    event_labels.append(1)
+                    msg = str(a[0])+" - "+str(a[1])+" is partially included (using a safety band on the right) in "+period[0]+" - "+period[1]
+                    event_msg.append(msg)
+
+                    #break
+                elif pd.to_datetime(period[0])-pd.Timedelta(self.guardperiod,'s') < a[0] and pd.to_datetime(period[1]) > a[1]:
+                    #print(a[0]," - ",a[1]," is partially included (using a safety band on the left) in ",period[0]," - ",period[1])
+                    #self.df_events_microfeatures.loc[ind,'label'] = 1 #anomaly
+                    #self.df_events_label.loc[pd.to_datetime(period[0]),'label'] = 1
+                    event_labels.append(1)
+                    msg = str(a[0])+" - "+str(a[1])+" is partially included (using a safety band on the left) in "+period[0]+" - "+period[1]
+                    event_msg.append(msg)
+                    #break
                 elif pd.to_datetime(period[0]) > a[0] and pd.to_datetime(period[1]) < a[1]:
-                    print("The anomaly ",a[0]," - ",a[1]," includes the event ",period[0]," - ",period[1])
-                    df_events.loc[ind,'class'] = "A" #anomaly
-                    df_events_label.loc[pd.to_datetime(period[0]),'label'] = "A"
-                    break
-                elif pd.to_datetime(period[0]) > a[0]-pd.Timedelta(1,'m') and pd.to_datetime(period[1]) < a[1]:
-                    print("The anomaly ",a[0]," - ",a[1]," partially includes (using a safety band on the left) the event ",period[0]," - ",period[1])
-                    df_events.loc[ind,'class'] = "A" #anomaly
-                    df_events_label.loc[pd.to_datetime(period[0]),'label'] = "A"
-                    break
-                elif pd.to_datetime(period[0]) > a[0] and pd.to_datetime(period[1]) < a[1]+pd.Timedelta(1,'m'):
-                    print("The anomaly ",a[0]," - ",a[1]," partially includes (using a safety band on the right) the event ",period[0]," - ",period[1])
-                    df_events.loc[ind,'class'] = "A" #anomaly
-                    df_events_label.loc[pd.to_datetime(period[0]),'label'] = "A"
-                    break
+                    #print("The anomaly ",a[0]," - ",a[1]," includes the event ",period[0]," - ",period[1])
+                    #self.df_events_microfeatures.loc[ind,'label'] = 1 #anomaly
+                    #self.df_events_label.loc[pd.to_datetime(period[0]),'label'] = 1
+                    event_labels.append(1)
+                    msg = "The anomaly "+str(a[0])+" - "+str(a[1])+" includes the event "+period[0]+" - "+period[1]
+                    event_msg.append(msg)
+                    #break
+                elif pd.to_datetime(period[0]) > a[0]-pd.Timedelta(self.guardperiod,'s') and pd.to_datetime(period[1]) < a[1]:
+                    #print("The anomaly ",a[0]," - ",a[1]," partially includes (using a safety band on the left) the event ",period[0]," - ",period[1])
+                    #self.df_events_microfeatures.loc[ind,'label'] = 1 #anomaly
+                    #self.df_events_label.loc[pd.to_datetime(period[0]),'label'] = 1
+                    event_labels.append(1)
+                    msg = "The anomaly "+str(a[0])+" - "+str(a[1])+" partially includes (using a safety band on the left) the event "+period[0]+" - "+period[1]
+                    event_msg.append(msg)
+                    #break
+                elif pd.to_datetime(period[0]) > a[0] and pd.to_datetime(period[1]) < a[1]+pd.Timedelta(self.guardperiod,'s'):
+                    #print("The anomaly ",a[0]," - ",a[1]," partially includes (using a safety band on the right) the event ",period[0]," - ",period[1])
+                    #self.df_events_microfeatures.loc[ind,'label'] = 1 #anomaly
+                    #self.df_events_label.loc[pd.to_datetime(period[0]),'label'] = 1
+                    event_labels.append(1)
+                    msg = "The anomaly "+str(a[0])+" - "+str(a[1])+" partially includes (using a safety band on the right) the event "+period[0]+" - "+period[1]
+                    event_msg.append(msg)
+                    #break
                 else:
-                    df_events.loc[ind,'class'] = "N" #normal - not an anomaly
-                    df_events_label.loc[pd.to_datetime(period[0]),'label'] = "N"
+                    #self.df_events_microfeatures.loc[ind,'label'] = 0 #normal - not an anomaly
+                    #self.df_events_label.loc[pd.to_datetime(period[0]),'label'] = 0
+                    event_labels.append(0)
+                    #event_msg.append()
+            if len(set(event_labels)) > 1: #when we have differente human label for the same period
+                print("The event is ambiguous. I won't assign neither 1 or 0. I will assign -1")
+                self.df_events_microfeatures.loc[ind,'label'] = -1 #anomaly
+                self.df_events_label.loc[pd.to_datetime(period[0]),'label'] = -1
+            elif event_labels[0] == 1:
+                self.df_events_microfeatures.loc[ind,'label'] = 1 #anomaly
+                self.df_events_label.loc[pd.to_datetime(period[0]),'label'] = 1
+                print(event_msg[0])
+            elif event_labels[0] == 0:
+                self.df_events_microfeatures.loc[ind,'label'] = 0 #normal - not an anomaly
+                self.df_events_label.loc[pd.to_datetime(period[0]),'label'] = 0
+
+
         print("---Checking for anomalous period fully/partially included in our events: DONE")
-        return (df_events,df_events_label)
+        #return (df_events,df_events_label)
 
-#%%
-###### helper functions ######
-
-########################################################################
-#import via data_manager the events dataframe                          #
-########################################################################
-def import_data_events(observation_start,observation_end):
-    print('\n---Importing the list of Events Dataframes via data manager: STARTED')
-    fabbri1905_fabax6pdb = data_manager.CustomerHostDiagnostics(
-            'fabbri', 'alyvix', 'influx', 'fabbri1905', 'FABAX6PDB',
-             observation_start, observation_end, 'Europe/Rome',
-            'diagnostics_map.json', local_data=True,
-            database_queries=True, preprocess_data=True)
-    list_event = fabbri1905_fabax6pdb.measure_pd_dataevent_samples
-    global _resampling_period_string
-    _resampling_period_string = fabbri1905_fabax6pdb._resampling_period_string
-    #print(list_event)
-    print('---Importing the list of Events Dataframes via data manager: DONE')
-    return list_event
-
-def import_data(observation_start,observation_end):
-    print('\n---Importing the list of Events Dataframes via data manager: STARTED')
-    fabbri1905_fabax6pdb = data_manager.CustomerHostDiagnostics(
-            'fabbri', 'alyvix', 'influx', 'fabbri1905', 'FABAX6PDB',
-             observation_start, observation_end, 'Europe/Rome',
-            'diagnostics_map.json', local_data=True,
-            database_queries=True, preprocess_data=True)
-
-    list_event = fabbri1905_fabax6pdb.measure_pd_dataevent_samples
-
-    _resampling_period_string = fabbri1905_fabax6pdb._resampling_period_string
-
-    ground_truths = fabbri1905_fabax6pdb.groundtruths
-    #print(list_event)
-    print('---Importing the list of Events Dataframes via data manager: DONE')
-    return (list_event,_resampling_period_string,ground_truths)
-
-def get_resampling_period_string(): 
-    return _resampling_period_string
-
-########################################################################
-#combine all the events and generate a dataframe with microfeatures    #
-#it can also apply feature engineering (mean and std method)           #
-########################################################################
-def get_event_microfeatures(list_events,feature_engineering):
-    if feature_engineering == True:
-        ## work on all events - shape: n.events x 36features (mean + variance)
-        print('\n---Bulding the Event Dataframe with microfeatures (mean and std method): STARTED')
-        events_dict = {}
-        for j, event in enumerate(list_events):
-            if j in [250,500,750,900,1000,len(list_events)-1]:
-                print('Event modelling: event dataframe n',j)
-            microfeatures_list = []
-            event_timespan = []
-            count = 0
-            for i in event.columns:
-                microfeatures_list.append(event.loc[:,i].mean())
-                microfeatures_list.append(event.loc[:,i].std())
-            event_timespan.append(str(event.index[0]))
-            event_timespan.append(str(event.index[len(event)-1]))
-            events_dict[' - '.join(event_timespan)] = microfeatures_list
-        df_events_microfeatures = pd.DataFrame(events_dict)
-        print('---Bulding the Event Dataframe with microfeatures: DONE')
-        return df_events_microfeatures.T
-    else:
-        ## work on all events - shape: n.events x 16200 (micro)features
-        print('\n---Bulding the Event Dataframe with microfeatures (without feature engineering): STARTED')
-        events_dict = {}
-        for j, event in enumerate(list_events):
-            if j in [250,500,750,900,1000,len(list_events)-1]:
-                print('Dataframe n',j)
-            microfeatures_list = []
-            event_timespan = []
-            count = 0
-            for i in event.index:
-                microfeatures_list = microfeatures_list + event.loc[i,:].values.tolist()
-                if count == 0 or count == len(event)-1:
-                    event_timespan.append(str(i))
-                count += 1
-            events_dict['-'.join(event_timespan)] = microfeatures_list
-        df_events_microfeatures = pd.DataFrame(events_dict)
-        print('\n---Bulding the Event Dataframe with microfeatures (without feature engineering): DONE')
-    return df_events_microfeatures.T
 
 #%%
 def main():
        
-    json_path = "classes.json" # default value
-    parser = argparse.ArgumentParser(description='Welcome to Ground Truth Generator by WurthPhoenix')
-    parser.add_argument('-l','--labeler', help='Human Labeler name or nickname',required=True)
-    parser.add_argument('-s','--session',help='Session name, e.g. anomaly_normal_20191016', required=True)
-    parser.add_argument('-b','--begin', help='Observation period start timestamp, e.g 2019-02-04 00:00:01',required=True)
-    parser.add_argument('-e','--end', help='Observation period end timestamp',required=True)
-    parser.add_argument('-j','--path', help='json file path',required=False)
-    args = parser.parse_args()
+    #json_path = "classes.json" # default value
+    json_path = "diagnostics_map.json" # default value
+
+    while True:
+        parser = argparse.ArgumentParser(description='Welcome to Ground Truth Generator by WurthPhoenix')
+        parser.add_argument('-c','--customer', help='Customer which you are interested in searching for anomalies, e.g fabbri',required=True)
+        parser.add_argument('-n','--network', help='Customer\'s network, e.g alyvix',required=True)
+        parser.add_argument('-s','--source', help='Customer\'s data source for pulling the data, e.g influx ',required=True)
+        parser.add_argument('-d','--db', help='A specific database in the data source, e.g fabbri1905',required=True)
+        parser.add_argument('-H','--host', help='A specific host whose data you want to analyze, e.g FABAX6PDB',required=True)
+        parser.add_argument('-l','--labeler', help='Human Labeler name or nickname',required=True)
+        parser.add_argument('-m','--model',help='Model name, e.g. normal_anomaly', required=True)
+        parser.add_argument('-b','--begin', help='Experiment period start timestamp, e.g 2019-02-04 00:00:01',required=False)
+        parser.add_argument('-e','--end', help='Experiment period end timestamp',required=False)
+        parser.add_argument('-a','--nago', help='You can ask for the last n hours or days,e.g. 7days',required=False)
+        parser.add_argument('-p','--eventperiod', help='Set the event duration, e.g 15m (m stands for minutes)',required=False)
+        parser.add_argument('-g','--guardperiod', help='Set the guard window (in seconds) used for event-anomaly inclusion, e.g 60',required=False)
+        parser.add_argument('-j','--path', help='Diagnostic map json file path',required=False)
+        args = parser.parse_args()
+        if (args.begin and args.end) or args.nago:
+            break
+        else: 
+            print('You have to insert the experiment period. Try setting --begin (-b) and --end (-e). Alternatively set -nago (-a). \nFor more details, see --help')
     
     print("\n---Params you typed")
-    print ("Human Labeler name (or nickname): %s" % args.labeler )
-    print ("Session name: %s" % args.session )
-    print ("Observation period start: %s" % args.begin )
-    print ("Observation period end: %s" % args.end )
+    print ("Customer under analysis: %s" % args.customer )
+    print ("Customer\'s network: %s" % args.network )
+    print ("Customer\'s data source: %s" % args.source )
+    print ("Database: %s" % args.db )
+    print ("Host: %s" % args.host )
+    print ("Human Labeler alias: %s" % args.labeler )
+    print ("Labeling model: %s" % args.model )
+    print ("Experiment period start: %s" % args.begin )
+    print ("Experiment period end: %s" % args.end )
+    print ("Experiment period (alternative method): %s ago" % args.nago )
+    print ("Event period: %s" % args.eventperiod )
+    print ("Guard window: %s" % args.guardperiod )
+
     if args.path:
         json_path = args.path
     print ("json file path: %s" % json_path  )
 
-
-    ### Import data from influxdb - calling the private_data_manager
-    #df is the joint dataframes of all the measurements (or units) - Event not handled
-    #df = import_data()
-
-    #decomment for importing data as Events
-    #list_events = import_data_events(args.begin,args.end)
-    list_events,resampling_period,ground_truths  = import_data(args.begin,args.end)
-    df_events_microfeatures = get_event_microfeatures(list_events,True)
-
-    gtg_obj = GroudTruthGenerator(args.labeler, args.session, args.begin, args.end, json_path,ground_truths)
+    gtg_obj = GroudTruthGenerator(args.customer,args.network,args.source,args.db,args.host,args.labeler, args.model, args.begin, args.end, args.nago, args.eventperiod, args.guardperiod, json_path)
     gtg_obj.get_ground_truth_periods()
     print("\nAnomalous time periods labeled by the human ",args.labeler)
     print(gtg_obj.anomaly_periods)
     gtg_obj.get_ground_truth_continuous_signal()
-    #resampling_period = get_resampling_period_string()
-    gtg_obj.resample_ground_truth_continuous_signal(resampling_period)
+    gtg_obj.resample_ground_truth_continuous_signal()
     print("\nAnomalous time periods labeled by the human ",args.labeler, " (after resampling)")
     gtg_obj.get_anomaly_periods_after_resample()
     
-    df_events_microfeature_label,df_events_label = gtg_obj.check_event_anomaly_inclusion(df_events_microfeatures)
-    event_label_series = pd.Series(df_events_label['label'], index= df_events_label.index)
-
-
+    gtg_obj.check_event_anomaly_inclusion()
+    events_label_series = pd.Series(gtg_obj.df_events_label['label'], index= gtg_obj.df_events_label.index)
+    print(events_label_series)
+    plt.plot(events_label_series.index,events_label_series.astype(int))
+    plt.show()
+    #events_label_series.astype(int).plot()
 if __name__ == '__main__':
     main()
 
