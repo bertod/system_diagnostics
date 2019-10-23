@@ -37,6 +37,7 @@ class GroudTruthGenerator:
         self.json_obj = ''
         self.anomaly_periods = []
         self.anomaly_periods_resample = []
+        self.invalid_periods_resample = []
         self.gt_series = pd.Series()
         self.gt_series_resample = pd.Series()
         self.groundtruths_json = []
@@ -224,11 +225,11 @@ class GroudTruthGenerator:
                     if prev_anomaly == '':
                         timezone_index = pd.date_range(ps,anomaly_start, freq='1T',closed = 'left')
                         utc_index = pd.to_datetime(timezone_index, utc=True)
-                        series_list.append(pd.Series([self.class_dict['normal']] * len(utc_index), index=utc_index))
+                        series_list.append(pd.Series([int(self.class_dict['normal'])] * len(utc_index), index=utc_index))
                     else:
                         timezone_index = pd.date_range(prev_anomaly,anomaly_start, freq='1T',closed = 'left')
                         utc_index = pd.to_datetime(timezone_index, utc=True)
-                        series_list.append(pd.Series([self.class_dict['normal']] * (len(utc_index)-1), index=utc_index[1:]))#skip the end timestamp of the previous anomaly
+                        series_list.append(pd.Series([int(self.class_dict['normal'])] * (len(utc_index)-1), index=utc_index[1:]))#skip the end timestamp of the previous anomaly
                     prev_anomaly = anomaly_end
                    
                     timezone_index = pd.date_range(anomaly_start,anomaly_end, freq='1T')
@@ -237,11 +238,11 @@ class GroudTruthGenerator:
             if flag == False: # normale period - period without anomalies
                 timezone_index = pd.date_range(ps,pe, freq='1T')
                 utc_index = pd.to_datetime(timezone_index, utc=True)
-                series_list.append(pd.Series([self.class_dict['normal']] * len(utc_index), index=utc_index))
+                series_list.append(pd.Series([int(self.class_dict['normal'])] * len(utc_index), index=utc_index))
             elif not prev_anomaly == '':
                 timezone_index = pd.date_range(prev_anomaly,pe, freq='1T',closed = 'right')
                 utc_index = pd.to_datetime(timezone_index, utc=True)
-                series_list.append(pd.Series([0] * len(utc_index), index=utc_index))
+                series_list.append(pd.Series([int(self.class_dict['normal'])] * len(utc_index), index=utc_index))
 
         if not prev == '':
             timezone_index = pd.date_range(prev,str(exp_end), freq='1T', closed = 'right')
@@ -269,6 +270,8 @@ class GroudTruthGenerator:
         prev = None
         start = None
         end = None
+        start_invalid = None
+        end_invalid = None
         for i in self.gt_series_resample.index:
             if self.gt_series_resample[i] == 0 :
                 if prev == None:
@@ -281,7 +284,16 @@ class GroudTruthGenerator:
                     self.anomaly_periods_resample.append((start,end))
                     start = None
                     end = None
-            else:
+
+                elif self.gt_series_resample[prev] == -1:
+                    #print('Here 0')
+                    end_invalid = prev
+                    #print(start_invalid,end_invalid)
+                    self.invalid_periods_resample.append((start_invalid,end_invalid))
+                    start_invalid = None
+                    end_invalid = None
+
+            elif self.gt_series_resample[i] == 1:
                 #print(gt_series_resample[i])
                 if prev == None:
                     #print('Here 3')
@@ -289,16 +301,48 @@ class GroudTruthGenerator:
                 elif self.gt_series_resample[prev] == 1:
                     #print('Here 2')
                     pass
+
+                elif self.gt_series_resample[prev] == -1:
+                    end_invalid = prev
+                    #print(start_invalid,end_invalid)
+                    self.invalid_periods_resample.append((start_invalid,end_invalid))
+                    start_invalid = None
+                    end_invalid = None
+                    start = i
+
                 else:
                     #print('Here 1')
                     start = i
+
+            elif self.gt_series_resample[i] == -1:
+                    #print(gt_series_resample[i])
+                if prev == None:
+                    #print('Here 3')
+                    start_invalid = i
+                elif self.gt_series_resample[prev] == -1:
+                    #print('Here 2')
+                    pass
+                elif self.gt_series_resample[prev] == 1:
+                    #print('Here 0')
+                    end = prev
+                    print(start,end)
+                    self.anomaly_periods_resample.append((start,end))
+                    start = None
+                    end = None
+                    start_invalid = i
+                else:
+                    #print('Here 1')
+                    start_invalid = i
             prev = i
         if start and end == None:
             if self.gt_series_resample[len(self.gt_series_resample.index)-1] == 1:
                 end = self.gt_series_resample.index[len(self.gt_series_resample.index)]
                 self.anomaly_periods_resample.append((start,end))
-        print('---Extracting the anomaly periods after resampling: DONE')
-        
+        elif start_invalid and end_invalid == None:
+            if self.gt_series_resample[len(self.gt_series_resample.index)-1] == -1:
+                end_invalid = self.gt_series_resample.index[len(self.gt_series_resample.index)]
+                self.invalid_periods_resample.append((start_invalid,end_invalid))
+        print('---Extracting the anomaly periods after resampling: DONE')        
     
     def check_event_anomaly_inclusion(self):
         
@@ -364,7 +408,17 @@ class GroudTruthGenerator:
                 else:
                     #self.df_events_microfeatures.loc[ind,'label'] = 0 #normal - not an anomaly
                     #self.df_events_label.loc[pd.to_datetime(period[0]),'label'] = 0
-                    event_labels.append(0)
+                    invalid = False
+                    for inv in self.invalid_periods_resample:
+                        latest_start = max(pd.to_datetime(period[0]),inv[0])
+                        earliest_end = min(pd.to_datetime(period[1]),inv[1])
+                        if latest_start <= earliest_end:
+                            invalid = True
+                            break
+                    if invalid == False:
+                        event_labels.append(0)
+                    else:
+                        event_labels.append(-1)
                     #event_msg.append()
             if len(set(event_labels)) > 1: #when we have differente human label for the same period
                 print("The event is ambiguous. I won't assign neither 1 or 0. I will assign -1")
@@ -377,8 +431,11 @@ class GroudTruthGenerator:
             elif event_labels[0] == 0:
                 self.df_events_microfeatures.loc[ind,'label'] = 0 #normal - not an anomaly
                 self.df_events_label.loc[pd.to_datetime(period[0]),'label'] = 0
+            elif event_labels[0] == -1:
+                self.df_events_microfeatures.loc[ind,'label'] = -1 #normal - not an anomaly
+                self.df_events_label.loc[pd.to_datetime(period[0]),'label'] = -1
 
-
+        self.df_events_label = self.df_events_label.sort_index()
         print("---Checking for anomalous period fully/partially included in our events: DONE")
         #return (df_events,df_events_label)
 
@@ -445,4 +502,3 @@ def main():
     #events_label_series.astype(int).plot()
 if __name__ == '__main__':
     main()
-
