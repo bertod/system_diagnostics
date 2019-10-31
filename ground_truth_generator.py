@@ -6,23 +6,29 @@ import os
 import sys
 import numpy as np
 import matplotlib.pyplot as plt
-from sklearn.svm import OneClassSVM
+import matplotlib.dates as mdates
+from matplotlib.dates import DateFormatter
 import shelve
 import argparse
 import json
-import seaborn as sns
+from functools import reduce
+from collections import Counter
 
 import data_manager
+import data_sampler
 import data_viewer
 import data_labeler
 import signal_processor
+import feature_extractor
 
 #%%
 ## class definition
 class GroudTruthGenerator:
 
-    def __init__(self,customer ='' ,network='',source='',db='',host='',labeler = '' ,model = '', experiment_start = '', experiment_end ='', n_ago='', event_period ='',guardperiod = '' , json_path = '',groundtruths_json = [] ):
+    def __init__(self,customer='' , network='', source='', db='', host='', labeler='', model='', experiment_start='', \
+                experiment_end ='', n_ago='', event_period='', guardperiod='', json_path='', groundtruths_json = [] ):
         
+        self.time_zone = 'Europe/Rome'
         self.customer = customer
         self.network = network
         self.source = source
@@ -36,44 +42,30 @@ class GroudTruthGenerator:
         self.json_path = json_path
         self.json_obj = ''
         self.anomaly_periods = []
-        self.anomaly_periods_resample = []
-        self.invalid_periods_resample = []
+        self.invalid_periods = []
+        self.class_series_dict = {}
         self.gt_series = pd.Series()
-        self.gt_series_resample = pd.Series()
+        self.gt_series_events_label = pd.Series()
         self.groundtruths_json = []
         self.invalid_class_value = ''
+        self.default_value = ''
         self.periods_list = []
         self.class_dict = {}
         self.list_events = []
-        self.event_period = ''
-        self.guardperiod = ''
-        self._resampling_period_string = ''
+        self.event_period = event_period
+        self.guardperiod = pd.to_timedelta(guardperiod,'s')
         self.df_events_microfeatures = None
         self.df_events_label = pd.DataFrame(columns=['label'])
 
-        #self.load_json()
         self.import_data()
 
         print("\nGTG instantiated\n")
 
-    def load_json(self):
-        try:
-            json_file = open(self.json_path)
-        except IOError:
-            print('error in json file opening - check if it acutally exists')
-            return None
-        try:
-            json_object = json.load(json_file)
-        except ValueError:
-            print('error in json file reading')
-            return None
-        self.json_obj = json_object
-        #return json_object
 
-    ########################################################################
-    #import via data_manager the events dataframe                          #
-    ########################################################################
     def import_data(self):
+
+        """import via data_manager the events dataframe"""
+
         experiment_start = pd.to_datetime('today',format='%Y-%m-%d %H:%M:%S')
         experiment_start = pd.to_datetime(str(experiment_start).split('.')[0])
         if self.n_ago != '' and (not self.experiment_start and not self.experiment_end) :
@@ -88,9 +80,9 @@ class GroudTruthGenerator:
             experiment_end = self.experiment_end
 
         if self.event_period == '':
-            event_period = '15m'
-        else:
-            event_period = self.event_period
+            self.event_period = '15m'
+        #else:
+            #event_period = self.event_period
 
         print(experiment_start)
         print(experiment_end)
@@ -98,70 +90,26 @@ class GroudTruthGenerator:
         fabbri1905_fabax6pdb = data_manager.CustomerHostDiagnostics(
                 self.customer, self.network, self.source, self.db, self.host,
                 str(experiment_start), str(experiment_end), 'Europe/Rome',
-                'diagnostics_map.json', event_minimum_period=event_period, local_data=True,
+                'diagnostics_map.json', event_minimum_period=self.event_period, local_data=True,
                 database_queries=True, preprocess_data=True)
 
         self.list_events = fabbri1905_fabax6pdb.measure_pd_dataevent_samples
-        self.get_event_microfeatures(True)
-        self._resampling_period_string = fabbri1905_fabax6pdb._resampling_period_string
+
+        f_extractor = feature_extractor.FeatureExtractor(self.list_events)
+        f_extractor.get_event_microfeatures(True)
+        self.df_events_microfeatures = f_extractor.df_events_microfeatures.copy()
+
+        #self._resampling_period_string = fabbri1905_fabax6pdb._resampling_period_string
         self.groundtruths_json = fabbri1905_fabax6pdb.groundtruths
         #print(list_event)
         print('---Importing data via data manager: DONE')
         #return (list_event,_resampling_period_string,ground_truths)
    
-   
-    ########################################################################
-    #combine all the events and generate a dataframe with microfeatures    #
-    #it can also apply feature engineering (mean and std method)           #
-    ########################################################################
-    def get_event_microfeatures(self,feature_engineering):
-        if feature_engineering == True:
-            ## work on all events - shape: n.events x 36features (mean + variance)
-            print('\n---Bulding the Event Dataframe with microfeatures (mean and std method): STARTED')
-            events_dict = {}
-            for j, event in enumerate(self.list_events):
-                if j in [250,500,750,900,1000,len(self.list_events)-1]:
-                    print('Event modelling: event dataframe n',j)
-                microfeatures_list = []
-                event_timespan = []
-                count = 0
-                for i in event.columns:
-                    microfeatures_list.append(event.loc[:,i].mean())
-                    microfeatures_list.append(event.loc[:,i].std())
-                event_timespan.append(str(event.index[0]))
-                event_timespan.append(str(event.index[len(event)-1]))
-                events_dict[' - '.join(event_timespan)] = microfeatures_list
-            df_events_microfeatures = pd.DataFrame(events_dict)
-            self.df_events_microfeatures = df_events_microfeatures.T
-            print('---Bulding the Event Dataframe with microfeatures: DONE')
-            #return df_events_microfeatures.T
-        else:
-            ## work on all events - shape: n.events x 16200 (micro)features
-            print('\n---Bulding the Event Dataframe with microfeatures (without feature engineering): STARTED')
-            events_dict = {}
-            for j, event in enumerate(self.list_events):
-                if j in [250,500,750,900,1000,len(self.list_events)-1]:
-                    print('Dataframe n',j)
-                microfeatures_list = []
-                event_timespan = []
-                count = 0
-                for i in event.index:
-                    microfeatures_list = microfeatures_list + event.loc[i,:].values.tolist()
-                    if count == 0 or count == len(event)-1:
-                        event_timespan.append(str(i))
-                    count += 1
-                events_dict['-'.join(event_timespan)] = microfeatures_list
-            df_events_microfeatures = pd.DataFrame(events_dict)
-            self.df_events_microfeatures = df_events_microfeatures.T
-            print('\n---Bulding the Event Dataframe with microfeatures (without feature engineering): DONE')
-        #return df_events_microfeatures.T
 
-    
-    ########################################################################
-    #load period of anomaly (Actual GroundTruth), recorded in the json file#
-    ########################################################################
     def get_ground_truth_periods(self):
-        print('\n---Loading periods manually labeled as Anomaly from the selected Json: STARTED')
+        """load recorded period of each class, recorded in the json file"""
+
+        print('\n---Loading periods manually labeled, for each class, from the selected Json: STARTED')
         for truth in self.groundtruths_json:#filter the user
             if truth['labeler_alias'].lower().strip() == self.labeler.lower().strip(): 
                 for model in truth['labeling_models']: #filter the session
@@ -169,276 +117,271 @@ class GroudTruthGenerator:
                         self.invalid_class_value = model['invalid_class_value']
                         
                         for period in model['periods']: #filter period of Experiment
-                            self.periods_list.append((period['period_start'],period['period_end']))
-                
+                            start_tmp = pd.to_datetime(period['period_start']).tz_convert(self.time_zone)
+                            end_tmp = pd.to_datetime(period['period_end']).tz_convert(self.time_zone)
+                            self.periods_list.append((start_tmp,end_tmp))
+                        self.periods_list.sort(key=lambda tup: tup[0])#sort by period start
+
                         flag = False #it is True when the class_name 'anomaly' is found in the json
                         for class_ in model['classes']: #filter class - e.g anomaly or normal
-                            self.class_dict[class_['class_label']] = class_['class_value'].lower().strip()
+                            self.class_dict[class_['class_label']] = {}
+                            self.class_dict[class_['class_label']]['value'] = class_['class_value'].lower().strip()
+                            self.class_dict[class_['class_label']]['type'] = class_['class_type'].lower().strip()
+                            
+                            if not class_['class_type'].lower().strip() == 'default':
+                                class_period_list = []
+                                for class_period in class_['class_periods']:
+                                    start_tmp = pd.to_datetime(class_period['period_start']).tz_convert(self.time_zone)
+                                    end_tmp = pd.to_datetime(class_period['period_end']).tz_convert(self.time_zone)
+                                    class_period_list.append((start_tmp,end_tmp))
+                                class_period_list.sort(key=lambda tup: tup[0])#sort by class period start
+                                self.class_dict[class_['class_label']]['periods'] = class_period_list
+                            else:
+                                self.default_value = int(self.class_dict[class_['class_label']]['value'])
+                                self.class_dict[class_['class_label']]['periods'] = []
+
                             if class_['class_label'] == 'anomaly':
                                 flag = True
-                                for class_period in class_['class_periods']:
-                                    self.anomaly_periods.append((class_period['period_start'],class_period['period_end']))
+                                #for class_period in class_['class_periods']:
+                                    #self.anomaly_periods.append((class_period['period_start'],class_period['period_end']))
 
                         if flag == False:
                             print('---Loading periods manually labeled as Anomaly from the selected Json: FAILED\n \
                                 the class_name "anomaly" does not exist in the selected json file')
                         else:
-                            if len(self.anomaly_periods) > 0:
-                                print('---Loading periods manually labeled as Anomaly from the selected Json: DONE')
+                            if len(self.class_dict['anomaly']['periods']) > 0:
+                                print('---Loading periods manually labeled, for each class, from the selected Json: DONE')
                             else:
-                                print('---Loading periods manually labeled as Anomaly from the selected Json: FAILED\n \
+                                print('---Loading periods manually labeled, for each class, from the selected Json: FAILED\n \
                                     The class_name "anomaly" is empty (no anomalous period time recorded) in the selected Json')
 
-    ########################################################################
-    #generate a continuous signal from the anomaly periods recorded in Json#
-    ########################################################################
+    
+    def get_class_continuous_signal(self):
+        """generate a continuous signal from the anomaly periods recorded in Json"""
 
-    def get_ground_truth_continuous_signal(self):
-        print('\n---Generation of the continuous signal: STARTED')
-        series_list = []
-        time_zone = 'Europe/Rome'
-        #time_zone = 'GMT' #corresponds to UTC
+        print('\n---Generation of the continuous signal for each class: STARTED')
+        #self.time_zone = 'Europe/Rome'
         prev = ''
-        exp_start = pd.to_datetime(self.experiment_start).tz_localize(time_zone)
-        exp_end = pd.to_datetime(self.experiment_end).tz_localize(time_zone)
+        exp_start = pd.to_datetime(self.experiment_start).tz_localize(self.time_zone)
+        exp_end = pd.to_datetime(self.experiment_end).tz_localize(self.time_zone)
 
-        for ps,pe in self.periods_list: #labeling period start, period end
-            ps = str(pd.to_datetime(ps).tz_convert(time_zone))
-            pe = str(pd.to_datetime(pe).tz_convert(time_zone))
-            if prev == '':
-                timezone_index = pd.date_range(str(exp_start),ps, freq='1T',closed = 'left')
-                utc_index = pd.to_datetime(timezone_index, utc=True)
-                series_list.append(pd.Series([int(self.invalid_class_value)] * len(utc_index), index=utc_index))
-            else: 
-                timezone_index = pd.date_range(prev,ps, freq='1T',closed = 'left')
-                utc_index = pd.to_datetime(timezone_index, utc=True)
-                series_list.append(pd.Series([int(self.invalid_class_value)] * (len(utc_index)-1), index=utc_index[1:]))
-            prev = pe
+        self.class_dict['period'] = {}
+        self.class_dict['period']['periods'] = self.periods_list
+        self.class_dict['period']['type'] = 'period'
+        self.class_dict['period']['value'] = '1'
+        sec = pd.to_timedelta(1,'s')
+        for serie in self.class_dict.keys():
+            #if not serie == 'anomaly':
+                #continue
+            prev = ''
             
-            prev_anomaly = ''
-            flag = False
-            for anomaly_start,anomaly_end in self.anomaly_periods: #anomaly start, anomaly end
-                anomaly_start = str(pd.to_datetime(anomaly_start).tz_convert(time_zone))
-                anomaly_end = str(pd.to_datetime(anomaly_end).tz_convert(time_zone))
-                if anomaly_start >= ps and anomaly_end <= pe: #this anomaly is in the current period
-                    flag = True
-                    if prev_anomaly == '':
-                        timezone_index = pd.date_range(ps,anomaly_start, freq='1T',closed = 'left')
-                        utc_index = pd.to_datetime(timezone_index, utc=True)
-                        series_list.append(pd.Series([int(self.class_dict['normal'])] * len(utc_index), index=utc_index))
-                    else:
-                        timezone_index = pd.date_range(prev_anomaly,anomaly_start, freq='1T',closed = 'left')
-                        utc_index = pd.to_datetime(timezone_index, utc=True)
-                        series_list.append(pd.Series([int(self.class_dict['normal'])] * (len(utc_index)-1), index=utc_index[1:]))#skip the end timestamp of the previous anomaly
-                    prev_anomaly = anomaly_end
-                   
-                    timezone_index = pd.date_range(anomaly_start,anomaly_end, freq='1T')
-                    utc_index = pd.to_datetime(timezone_index, utc=True)
-                    series_list.append(pd.Series([1] * len(utc_index), index=utc_index))
-            if flag == False: # normale period - period without anomalies
-                timezone_index = pd.date_range(ps,pe, freq='1T')
-                utc_index = pd.to_datetime(timezone_index, utc=True)
-                series_list.append(pd.Series([int(self.class_dict['normal'])] * len(utc_index), index=utc_index))
-            elif not prev_anomaly == '':
-                timezone_index = pd.date_range(prev_anomaly,pe, freq='1T',closed = 'right')
-                utc_index = pd.to_datetime(timezone_index, utc=True)
-                series_list.append(pd.Series([int(self.class_dict['normal'])] * len(utc_index), index=utc_index))
+            if self.class_dict[serie]['type'] == 'default':
+                timezone_index = pd.date_range(exp_start,exp_end, freq='1S',tz = self.time_zone)
+                utc_index = pd.to_datetime(timezone_index, utc=False)
+                self.class_dict[serie]['signal'] = pd.Series([1] * (len(utc_index)), index=utc_index)
+            else:
+                timezone_index = pd.date_range(exp_start,exp_end, freq='1S',tz = self.time_zone)
+                utc_index = pd.to_datetime(timezone_index, utc=False)
+                #self.class_dict[serie]['signal'] = pd.Series([0] * (len(utc_index)), index=utc_index)
+                self.class_dict[serie]['signal'] = pd.Series([self.default_value] * (len(utc_index)), index=utc_index)
 
-        if not prev == '':
-            timezone_index = pd.date_range(prev,str(exp_end), freq='1T', closed = 'right')
-            utc_index = pd.to_datetime(timezone_index, utc=True)
-            series_list.append(pd.Series([int(self.invalid_class_value)] * len(utc_index), index=utc_index))
+            for ps,pe in self.class_dict[serie]['periods']: #labeling period start, period end
+                #ps = pd.to_datetime(ps).tz_convert(self.time_zone)
+                #pe = pd.to_datetime(pe).tz_convert(self.time_zone)
+                overlapping = False
+                if serie == 'period':
+                    if str(prev) == '':
+                        timezone_index = pd.date_range(exp_start,ps, freq='1S',closed = 'left',tz = self.time_zone)
+                        utc_index = pd.to_datetime(timezone_index, utc=False)
+                        self.class_dict[serie]['signal'][exp_start:ps-sec] = [int(self.invalid_class_value)] * len(utc_index)
+                        self.invalid_periods.append((exp_start,ps-sec))
+                    else: 
+                        if ps > prev:
+                            print("not overlapping periods")
+                            timezone_index = pd.date_range(prev,ps, freq='1S',closed = 'left',tz = self.time_zone)
+                            utc_index = pd.to_datetime(timezone_index, utc=False)
+                            self.class_dict[serie]['signal'][prev+sec:ps-sec] = [int(self.invalid_class_value)] * (len(utc_index)-1)
+                            self.invalid_periods.append((prev+sec,ps-sec))
+                        else:#ps <= prev
+                            print("overlapping periods")
+                            overlapping = True
+                            timezone_index = pd.date_range(prev,pe, freq='1S',closed = 'right',tz = self.time_zone)
+                            utc_index = pd.to_datetime(timezone_index, utc=False)
+                            #self.class_dict[serie]['signal'][prev+sec:pe] = [1] * (len(utc_index))
+                            self.class_dict[serie]['signal'][prev+sec:pe] = [int(self.class_dict[serie]['value'])] * (len(utc_index))
 
+                if not overlapping:#it enters here also when the serie is not 'period'
+                    timezone_index = pd.date_range(ps,pe, freq='1S',tz = self.time_zone)
+                    utc_index = pd.to_datetime(timezone_index, utc=False)
+                    self.class_dict[serie]['signal'][ps:pe] = [int(self.class_dict[serie]['value'])] * len(utc_index)
+                prev = pe
 
-        for s in series_list:
-            self.gt_series = self.gt_series.append(s)
-        #print(gt_series)
+            if not prev == '' and serie == 'period':
+                timezone_index = pd.date_range(prev,exp_end, freq='1S', closed = 'right',tz = self.time_zone)
+                utc_index = pd.to_datetime(timezone_index, utc=False)
+                self.class_dict[serie]['signal'][prev+sec:exp_end] = [int(self.invalid_class_value)] * len(utc_index)
+                self.invalid_periods.append((prev+sec,exp_end))
+            
+            self.class_series_dict[serie] = self.class_dict[serie]['signal']
+
         print('---Generaton of the continuous signal: DONE')
 
 
-    ########################################################################
-    #resample the continuous signal with the resampling period used on the #
-    #original series                                                       #                                      
-    ########################################################################
-    def resample_ground_truth_continuous_signal(self):
-        print('\n---Resampling the GroundTruth continuous signal: STARTED')
-        self.gt_series_resample = self.gt_series.resample(self._resampling_period_string).pad()
-        print('---Resampling the GroundTruth continuous signal: DONE')
+    def get_ground_truth_continuous_signal(self):
+        """get the grounf truth cont. signal by combining all the class signals"""
 
-    def get_anomaly_periods_after_resample(self):
-        print('---Extracting the anomaly periods after resampling: STARTED')
-        prev = None
-        start = None
-        end = None
-        start_invalid = None
-        end_invalid = None
-        for i in self.gt_series_resample.index:
-            if self.gt_series_resample[i] == 0 :
-                if prev == None:
-                    #print('Here 4')
-                    pass
-                elif self.gt_series_resample[prev] == 1:
-                    #print('Here 0')
-                    end = prev
-                    print(start,end)
-                    self.anomaly_periods_resample.append((start,end))
-                    start = None
-                    end = None
+        print('\n---Generation of the GT continuous signal: STARTED')
+        dict_indeces = {}
+        for serie in self.class_series_dict.keys():
+            if self.class_dict[serie]['type'] == 'default':
+                #default_value = int(self.class_dict[serie]['value'])
+                time_index = self.class_series_dict[serie].index
+                n_rows = len(time_index)
+                continue
+            if not serie == 'period': 
+                #dict_indeces[serie] = np.where(self.class_series_dict[serie] == 1)[0]
+                dict_indeces[serie] = np.where(self.class_series_dict[serie] == int(self.class_dict[serie]['value']))[0]
+            else:
+                #invalid_indeces = np.where(self.class_series_dict[serie] == -1)[0]
+                invalid_indeces = np.where(self.class_series_dict[serie] == int(self.invalid_class_value))[0]
+                continue
+        if len(dict_indeces.keys()) > 1:
+            intersect_indeces = reduce(np.intersect1d, ([indeces for serie,indeces in dict_indeces.items()]))
+            invalid_indeces = np.append(invalid_indeces,intersect_indeces)
 
-                elif self.gt_series_resample[prev] == -1:
-                    #print('Here 0')
-                    end_invalid = prev
-                    #print(start_invalid,end_invalid)
-                    self.invalid_periods_resample.append((start_invalid,end_invalid))
-                    start_invalid = None
-                    end_invalid = None
+        label_signal = np.array([self.default_value]*n_rows)
+        for serie,positions in dict_indeces.items():
+            value = self.class_dict[serie]['value']
+            for pos in positions:
+                label_signal[pos] = value
+        for invalid_pos in invalid_indeces:
+            label_signal[invalid_pos] = self.invalid_class_value
 
-            elif self.gt_series_resample[i] == 1:
-                #print(gt_series_resample[i])
-                if prev == None:
-                    #print('Here 3')
-                    start = i
-                elif self.gt_series_resample[prev] == 1:
-                    #print('Here 2')
-                    pass
+        self.gt_series = pd.Series(label_signal,index=time_index)
 
-                elif self.gt_series_resample[prev] == -1:
-                    end_invalid = prev
-                    #print(start_invalid,end_invalid)
-                    self.invalid_periods_resample.append((start_invalid,end_invalid))
-                    start_invalid = None
-                    end_invalid = None
-                    start = i
 
-                else:
-                    #print('Here 1')
-                    start = i
-
-            elif self.gt_series_resample[i] == -1:
-                    #print(gt_series_resample[i])
-                if prev == None:
-                    #print('Here 3')
-                    start_invalid = i
-                elif self.gt_series_resample[prev] == -1:
-                    #print('Here 2')
-                    pass
-                elif self.gt_series_resample[prev] == 1:
-                    #print('Here 0')
-                    end = prev
-                    print(start,end)
-                    self.anomaly_periods_resample.append((start,end))
-                    start = None
-                    end = None
-                    start_invalid = i
-                else:
-                    #print('Here 1')
-                    start_invalid = i
-            prev = i
-        if start and end == None:
-            if self.gt_series_resample[len(self.gt_series_resample.index)-1] == 1:
-                end = self.gt_series_resample.index[len(self.gt_series_resample.index)]
-                self.anomaly_periods_resample.append((start,end))
-        elif start_invalid and end_invalid == None:
-            if self.gt_series_resample[len(self.gt_series_resample.index)-1] == -1:
-                end_invalid = self.gt_series_resample.index[len(self.gt_series_resample.index)]
-                self.invalid_periods_resample.append((start_invalid,end_invalid))
-        print('---Extracting the anomaly periods after resampling: DONE')        
-    
-    def check_event_anomaly_inclusion(self):
-        
-        print("\n---Checking for anomalous period fully/partially included in our events: STARTED")
-        #anomalies = gtg_obj.anomaly_periods_resample
+    def perform_event_labeling(self):
+        """
+            (v1 - using inclusion criterion)
+            it checks if an event corresponds to a class or not. In case the
+            event is included in an invalid period it will be assigned as invalid 
+        """
+        print("\n---Checking for anomalous period fully/partially included in our events v2: STARTED")
         if self.guardperiod == '':
-            self.guardperiod = '60'
+            self.guardperiod = pd.to_timedelta(60,'s')
+
         for ind in self.df_events_microfeatures.index:
             period = ind.split(" - ")
             event_labels = []
             event_msg = []
-            for a in self.anomaly_periods_resample:
-                # t(event) start < t(anomaly) start and t(event) end > t(anomaly) end
-                if pd.to_datetime(period[0]) < a[0] and pd.to_datetime(period[1]) > a[1]:
-                    #print(a[0]," - ",a[1]," is fully included in the event: ",period[0]," - ",period[1])
-                    #self.df_events_microfeatures.loc[ind,'label'] = 1 #anomaly
-                    #self.df_events_label.loc[pd.to_datetime(period[0]),'label'] = 1
-                    event_labels.append(1)
-                    msg = str(a[0])+" - "+str(a[1])+" is fully included in the event: "+period[0]+" - "+period[1]
-                    event_msg.append(a[0]," - ",a[1]," is fully included in the event: ",period[0]," - ",period[1])
-                    #break
-                elif pd.to_datetime(period[0]) < a[0] and pd.to_datetime(period[1])+pd.Timedelta(self.guardperiod,'s') > a[1]:
-                    #print(a[0]," - ",a[1]," is partially included (using a safety band on the right) in ",period[0]," - ",period[1])
-                    #self.df_events_microfeatures.loc[ind,'label'] = 1 #anomaly
-                    #self.df_events_label.loc[pd.to_datetime(period[0]),'label'] = "1"
-                    event_labels.append(1)
-                    msg = str(a[0])+" - "+str(a[1])+" is partially included (using a safety band on the right) in "+period[0]+" - "+period[1]
-                    event_msg.append(msg)
+            
+            period[0] = pd.to_datetime(period[0]).tz_convert(self.time_zone)
+            period[1] = pd.to_datetime(period[1]).tz_convert(self.time_zone)
+            
+            for serie in self.class_dict.keys():
+                if self.class_dict[serie]['type'] == 'default' or serie == 'period':
+                    continue
+                for a in self.class_dict[serie]['periods']:
+                    if period[0] < a[0] and period[1] > a[1]:
+                        event_labels.append(1)
+                        msg = "The "+serie+" period "+str(a[0])+" - "+str(a[1])+" is fully included in the event: "+str(period[0])+" - "+str(period[1])
+                        event_msg.append(msg)
+                        #break
+                    elif period[0] < a[0] and period[1]+self.guardperiod > a[1]:
+                        event_labels.append(self.class_dict[serie]['value'])
+                        msg = "The "+serie+" period "+str(a[0])+" - "+str(a[1])+" is partially included (using a safety band on the right) in "+str(period[0])+" - "+str(period[1])
+                        event_msg.append(msg)
+                        #break
+                    elif period[0]-self.guardperiod < a[0] and period[1] > a[1]:
+                        event_labels.append(self.class_dict[serie]['value'])
+                        msg = "The "+serie+" period "+str(a[0])+" - "+str(a[1])+" is partially included (using a safety band on the left) in "+str(period[0])+" - "+str(period[1])
+                        event_msg.append(msg)
+                        #break
+                    elif period[0] > a[0] and period[1] < a[1]:
+                        event_labels.append(self.class_dict[serie]['value'])
+                        msg = "The "+serie+" period "+str(a[0])+" - "+str(a[1])+" includes the event "+str(period[0])+" - "+str(period[1])
+                        event_msg.append(msg)
+                        #break
+                    elif period[0] > a[0]-self.guardperiod and period[1] < a[1]:
+                        event_labels.append(self.class_dict[serie]['value'])
+                        msg = "The "+serie+" period "+str(a[0])+" - "+str(a[1])+" partially includes (using a safety band on the left) the event "+str(period[0])+" - "+str(period[1])
+                        event_msg.append(msg)
+                        #break
+                    elif period[0] > a[0] and period[1] < a[1]+self.guardperiod:
+                        event_labels.append(self.class_dict[serie]['value'])
+                        msg = "The "+serie+" period "+str(a[0])+" - "+str(a[1])+" partially includes (using a safety band on the right) the event "+str(period[0])+" - "+str(period[1])
+                        event_msg.append(msg)
+                        #break
 
-                    #break
-                elif pd.to_datetime(period[0])-pd.Timedelta(self.guardperiod,'s') < a[0] and pd.to_datetime(period[1]) > a[1]:
-                    #print(a[0]," - ",a[1]," is partially included (using a safety band on the left) in ",period[0]," - ",period[1])
-                    #self.df_events_microfeatures.loc[ind,'label'] = 1 #anomaly
-                    #self.df_events_label.loc[pd.to_datetime(period[0]),'label'] = 1
-                    event_labels.append(1)
-                    msg = str(a[0])+" - "+str(a[1])+" is partially included (using a safety band on the left) in "+period[0]+" - "+period[1]
-                    event_msg.append(msg)
-                    #break
-                elif pd.to_datetime(period[0]) > a[0] and pd.to_datetime(period[1]) < a[1]:
-                    #print("The anomaly ",a[0]," - ",a[1]," includes the event ",period[0]," - ",period[1])
-                    #self.df_events_microfeatures.loc[ind,'label'] = 1 #anomaly
-                    #self.df_events_label.loc[pd.to_datetime(period[0]),'label'] = 1
-                    event_labels.append(1)
-                    msg = "The anomaly "+str(a[0])+" - "+str(a[1])+" includes the event "+period[0]+" - "+period[1]
-                    event_msg.append(msg)
-                    #break
-                elif pd.to_datetime(period[0]) > a[0]-pd.Timedelta(self.guardperiod,'s') and pd.to_datetime(period[1]) < a[1]:
-                    #print("The anomaly ",a[0]," - ",a[1]," partially includes (using a safety band on the left) the event ",period[0]," - ",period[1])
-                    #self.df_events_microfeatures.loc[ind,'label'] = 1 #anomaly
-                    #self.df_events_label.loc[pd.to_datetime(period[0]),'label'] = 1
-                    event_labels.append(1)
-                    msg = "The anomaly "+str(a[0])+" - "+str(a[1])+" partially includes (using a safety band on the left) the event "+period[0]+" - "+period[1]
-                    event_msg.append(msg)
-                    #break
-                elif pd.to_datetime(period[0]) > a[0] and pd.to_datetime(period[1]) < a[1]+pd.Timedelta(self.guardperiod,'s'):
-                    #print("The anomaly ",a[0]," - ",a[1]," partially includes (using a safety band on the right) the event ",period[0]," - ",period[1])
-                    #self.df_events_microfeatures.loc[ind,'label'] = 1 #anomaly
-                    #self.df_events_label.loc[pd.to_datetime(period[0]),'label'] = 1
-                    event_labels.append(1)
-                    msg = "The anomaly "+str(a[0])+" - "+str(a[1])+" partially includes (using a safety band on the right) the event "+period[0]+" - "+period[1]
-                    event_msg.append(msg)
-                    #break
-                else:
-                    #self.df_events_microfeatures.loc[ind,'label'] = 0 #normal - not an anomaly
-                    #self.df_events_label.loc[pd.to_datetime(period[0]),'label'] = 0
-                    invalid = False
-                    for inv in self.invalid_periods_resample:
-                        latest_start = max(pd.to_datetime(period[0]),inv[0])
-                        earliest_end = min(pd.to_datetime(period[1]),inv[1])
-                        if latest_start <= earliest_end:
-                            invalid = True
-                            break
-                    if invalid == False:
-                        event_labels.append(0)
-                    else:
-                        event_labels.append(-1)
-                    #event_msg.append()
-            if len(set(event_labels)) > 1: #when we have differente human label for the same period
+            if len(set(event_labels)) > 1: #when we have different label for the same event
                 print("The event is ambiguous. I won't assign neither 1 or 0. I will assign -1")
-                self.df_events_microfeatures.loc[ind,'label'] = -1 #anomaly
-                self.df_events_label.loc[pd.to_datetime(period[0]),'label'] = -1
-            elif event_labels[0] == 1:
-                self.df_events_microfeatures.loc[ind,'label'] = 1 #anomaly
-                self.df_events_label.loc[pd.to_datetime(period[0]),'label'] = 1
-                print(event_msg[0])
-            elif event_labels[0] == 0:
-                self.df_events_microfeatures.loc[ind,'label'] = 0 #normal - not an anomaly
-                self.df_events_label.loc[pd.to_datetime(period[0]),'label'] = 0
-            elif event_labels[0] == -1:
-                self.df_events_microfeatures.loc[ind,'label'] = -1 #normal - not an anomaly
-                self.df_events_label.loc[pd.to_datetime(period[0]),'label'] = -1
+                self.df_events_microfeatures.loc[ind,'label'] = self.invalid_class_value #anomaly
+                self.df_events_label.loc[period[0],'label'] = self.invalid_class_value
+            elif len(set(event_labels)) == 0:
+                invalid = False
+                for inv in self.invalid_periods:
+                    latest_start = max(period[0],inv[0])
+                    earliest_end = min(period[1],inv[1])
+                    if latest_start <= earliest_end:
+                        invalid = True
+                        break
+                if invalid == False:
+                    event_labels.append(self.default_value)
+                    self.df_events_microfeatures.loc[ind,'label'] = self.default_value #anomaly
+                    self.df_events_label.loc[period[0],'label'] = self.default_value
+                else:
+                    event_labels.append(self.invalid_class_value)
+                    self.df_events_microfeatures.loc[ind,'label'] = self.invalid_class_value #anomaly
+                    self.df_events_label.loc[period[0],'label'] = self.invalid_class_value
+            else:
+                self.df_events_microfeatures.loc[ind,'label'] = event_labels[0] #anomaly
+                self.df_events_label.loc[period[0],'label'] = event_labels[0]
 
         self.df_events_label = self.df_events_label.sort_index()
-        print("---Checking for anomalous period fully/partially included in our events: DONE")
-        #return (df_events,df_events_label)
+        print("---Checking for anomalous period fully/partially included in our events: DONE")        #return (df_events,df_events_label)
 
+    def find_majority(self,votes):
+        """
+            helper function for the perform_event_labeling_from_gt_signal method. 
+            It looks for the most common value in an event period
+        """
+        vote_count = Counter(votes)
+        top = vote_count.most_common(1)
+        if len(top)>1:
+            # It is a tie and it maight be ambiguous
+            return -1
+        return top[0][0]
+
+    def perform_event_labeling_from_gt_signal(self):
+        """
+            (v2 - using gt event extraction)
+            This method generates the labels for events, 
+            by splitting into events the ground trith signal
+        """
+        print("\n---Performing Event Labeling GT signal: STARTED")
+        gt_events, event_minimum_samples = data_sampler.sample_dataevents(self.gt_series,event_minimum_period=self.event_period)
+        #events_dict = {}
+        events_dict = {}
+        n_events = len(gt_events)
+        progress_list = [round(n_events*20/100),round(n_events*40/100),round(n_events*50/100),round(n_events*70/100),round(n_events*90/100),n_events-1]
+        for j, event in enumerate(gt_events):
+            if j in progress_list:
+                print('Event modelling: event dataframe n',j, 'out of ',n_events)
+            label_list = []
+            event_timespan = []
+            count = 0
+            for i in event.index:
+                label_list.append(event[i])
+            event_timespan.append((event.index[0]))
+            event_timespan.append((event.index[len(event)-1]))
+            value = self.find_majority(label_list)
+            #events_dict[' - '.join(event_timespan)] = value
+            events_dict[event_timespan[0]] = value
+
+        #df_gt_events = pd.DataFrame(events_dict_single,index=['label'])
+        self.gt_series_events_label = pd.Series(events_dict,index=events_dict.keys())
+        #self.df_gt_events_label = df_gt_events.T
+        print("---Performing Event Labeling from GT signal: DONE")
 
 #%%
 def main():
@@ -465,7 +408,8 @@ def main():
         if (args.begin and args.end) or args.nago:
             break
         else: 
-            print('You have to insert the experiment period. Try setting --begin (-b) and --end (-e). Alternatively set -nago (-a). \nFor more details, see --help')
+            print('You have to insert the experiment period. Try setting --begin (-b) \
+                    and --end (-e). Alternatively set -nago (-a). \nFor more details, see --help')
     
     print("\n---Params you typed")
     print ("Customer under analysis: %s" % args.customer )
@@ -485,20 +429,85 @@ def main():
         json_path = args.path
     print ("json file path: %s" % json_path  )
 
-    gtg_obj = GroudTruthGenerator(args.customer,args.network,args.source,args.db,args.host,args.labeler, args.model, args.begin, args.end, args.nago, args.eventperiod, args.guardperiod, json_path)
-    gtg_obj.get_ground_truth_periods()
-    print("\nAnomalous time periods labeled by the human ",args.labeler)
-    print(gtg_obj.anomaly_periods)
-    gtg_obj.get_ground_truth_continuous_signal()
-    gtg_obj.resample_ground_truth_continuous_signal()
-    print("\nAnomalous time periods labeled by the human ",args.labeler, " (after resampling)")
-    gtg_obj.get_anomaly_periods_after_resample()
+    #instantiate the gtg object
+    gtg_obj = GroudTruthGenerator(args.customer,args.network,args.source,args.db, \
+                                    args.host,args.labeler, args.model, args.begin, args.end, args.nago, \
+                                    args.eventperiod, args.guardperiod, json_path)
     
-    gtg_obj.check_event_anomaly_inclusion()
-    events_label_series = pd.Series(gtg_obj.df_events_label['label'], index= gtg_obj.df_events_label.index)
-    print(events_label_series)
-    plt.plot(events_label_series.index,events_label_series.astype(int))
+    #read from json, the recorded periods for each class
+    gtg_obj.get_ground_truth_periods()
+    for serie,data in gtg_obj.class_dict.items():
+        if not serie == 'period' and not data['type'] == 'default':
+            print('Periods of class',serie,' manually labeled by a human labeler and reported in json file')
+            print(data['periods'])
+            print('\n')
+
+    #generate signals for each class
+    gtg_obj.get_class_continuous_signal()
+    
+    #generate the ground truth signal
+    gtg_obj.get_ground_truth_continuous_signal()
+
+    #perform event labeling (v1 - using inclusion criterion)
+    gtg_obj.perform_event_labeling()
+
+    #perform event labeling (v2 - using gt signal event extraction)
+    gtg_obj.perform_event_labeling_from_gt_signal()
+
+    
+    #print subplots for each generated signal
+    fig = plt.figure(figsize=(10,10))
+    min_y = min(gtg_obj.gt_series)
+    max_y = max(gtg_obj.gt_series)
+    yticks = np.arange(min_y,max_y+1)
+
+    plt.subplot(6,1,1)
+    plt.title('Period')
+    plt.xticks([])
+    plt.yticks(yticks)
+    plt.ylim(min_y,max_y)
+    gtg_obj.class_series_dict['period'].plot(label = 'period signal',c = 'black')
+
+    plt.subplot(6,1,2)
+    plt.title('Normal')
+    plt.xticks([])
+    plt.yticks(yticks)
+    plt.ylim(min_y,max_y)
+    gtg_obj.class_series_dict['normal'].plot(label = 'normal signal',c = 'black', linestyle = 'dashed')
+
+    plt.subplot(6,1,3)
+    plt.title('Anomaly')
+    plt.xticks([])
+    plt.yticks(yticks)
+    plt.ylim(min_y,max_y)
+    gtg_obj.class_series_dict['anomaly'].plot(label = 'anomaly signal',c = 'orange')
+
+    plt.subplot(6,1,4)
+    plt.title('Control')
+    plt.xticks([])
+    plt.yticks(yticks)
+    plt.ylim(min_y,max_y)
+    gtg_obj.class_series_dict['control'].plot(label = 'GT signal',c = 'yellow')
+
+    plt.subplot(6,1,5)
+    plt.title('GT')
+    plt.xticks([])
+    plt.yticks(yticks)
+    plt.ylim(min_y,max_y)
+    gtg_obj.gt_series.plot(label = 'GT signal',c = 'red',markersize=20)
+
+    plt.subplot(6,1,6)
+    plt.title('Events label series')
+    plt.yticks(yticks)
+    plt.ylim(min_y,max_y)
+    gtg_obj.gt_series_events_label.plot(label = 'GT signal label',c = 'red',markersize=20)
+
     plt.show()
-    #events_label_series.astype(int).plot()
+
+    
+    
+
 if __name__ == '__main__':
-    main()
+    #main()
+    pass
+
