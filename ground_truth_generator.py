@@ -1,6 +1,6 @@
-##Ground Truth Generator
-
-#%%
+"""
+    GroundTruthGeneratore Module
+"""
 import pandas as pd
 import os
 import sys
@@ -21,8 +21,6 @@ import data_labeler
 import signal_processor
 import feature_extractor
 
-#%%
-## class definition
 class GroudTruthGenerator:
 
     def __init__(self,customer='' , network='', source='', db='', host='', labeler='', model='', experiment_start='', \
@@ -56,6 +54,7 @@ class GroudTruthGenerator:
         self.guardperiod = pd.to_timedelta(guardperiod,'s')
         self.df_events_microfeatures = None
         self.df_events_label = pd.DataFrame(columns=['label'])
+        self.series_events_label = pd.Series()
 
         self.import_data()
 
@@ -338,6 +337,7 @@ class GroudTruthGenerator:
                 self.df_events_label.loc[period[0],'label'] = event_labels[0]
 
         self.df_events_label = self.df_events_label.sort_index()
+        self.series_events_label = pd.Series(self.df_events_label['label'].astype(int),index=self.df_events_label.index)
         print("---Checking for anomalous period fully/partially included in our events: DONE")        #return (df_events,df_events_label)
 
     def find_majority(self,votes):
@@ -383,7 +383,7 @@ class GroudTruthGenerator:
         #self.df_gt_events_label = df_gt_events.T
         print("---Performing Event Labeling from GT signal: DONE")
 
-#%%
+
 def main():
        
     #json_path = "classes.json" # default value
