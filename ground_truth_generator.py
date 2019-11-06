@@ -1,6 +1,7 @@
 """
     GroundTruthGeneratore Module
 """
+#%%  
 import pandas as pd
 import os
 import sys
@@ -13,6 +14,7 @@ import argparse
 import json
 from functools import reduce
 from collections import Counter
+from itertools import combinations
 
 import data_manager
 import data_sampler
@@ -21,6 +23,7 @@ import data_labeler
 import signal_processor
 import feature_extractor
 
+#%%  
 class GroudTruthGenerator:
 
     def __init__(self,customer='' , network='', source='', db='', host='', labeler='', model='', experiment_start='', \
@@ -244,10 +247,19 @@ class GroudTruthGenerator:
                 #invalid_indeces = np.where(self.class_series_dict[serie] == -1)[0]
                 invalid_indeces = np.where(self.class_series_dict[serie] == int(self.invalid_class_value))[0]
                 continue
+        print("invalid index before - ",invalid_indeces)
         if len(dict_indeces.keys()) > 1:
-            intersect_indeces = reduce(np.intersect1d, ([indeces for serie,indeces in dict_indeces.items()]))
+            intersect_indeces = np.array([])
+            comparison_list = combinations(dict_indeces.keys(),2)
+            for s1,s2 in comparison_list:
+                intersect_indeces = np.append(intersect_indeces,np.intersect1d(dict_indeces[s1],dict_indeces[s2])).astype(int)
+            intersect_indeces = np.unique(intersect_indeces)
             invalid_indeces = np.append(invalid_indeces,intersect_indeces)
-
+        #elif len(dict_indeces.keys()) > 1:
+            #intersect_indeces = reduce(np.intersect1d, ([indeces for serie,indeces in dict_indeces.items()]))
+            #invalid_indeces = np.append(invalid_indeces,intersect_indeces)
+        print(intersect_indeces)
+        print(type(intersect_indeces))
         label_signal = np.array([self.default_value]*n_rows)
         for serie,positions in dict_indeces.items():
             value = self.class_dict[serie]['value']
@@ -383,7 +395,7 @@ class GroudTruthGenerator:
         #self.df_gt_events_label = df_gt_events.T
         print("---Performing Event Labeling from GT signal: DONE")
 
-
+#%%  
 def main():
        
     #json_path = "classes.json" # default value
@@ -505,9 +517,9 @@ def main():
     plt.show()
 
     
-    
+#%%    
 
 if __name__ == '__main__':
-    #main()
-    pass
+    main()
+    #pass
 
