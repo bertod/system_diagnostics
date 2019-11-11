@@ -1,6 +1,6 @@
 import pandas as pd
 
-class FeatureExtractor():
+class SampleExtractor():
 
     def __init__(self, list_events = []):
         self.list_events = list_events
@@ -46,11 +46,11 @@ class FeatureExtractor():
                 event_timespan = []
                 count = 0
                 for i in event.index:
-                    microfeatures_list = microfeatures_list + event.loc[i,:].values.tolist()
+                    #microfeatures_list = microfeatures_list + event.loc[i,:].values.tolist()
                     if count == 0 or count == len(event)-1:
                         event_timespan.append(str(i))
                     count += 1
-                events_dict['-'.join(event_timespan)] = microfeatures_list
+                events_dict[' - '.join(event_timespan)] = microfeatures_list
             df_events_microfeatures = pd.DataFrame(events_dict)
             self.df_events_microfeatures = df_events_microfeatures.T
             print('\n---Bulding the Event Dataframe with microfeatures (without feature engineering): DONE')

@@ -28,13 +28,12 @@ import json
 import shelve
 import urllib.parse as urlparse
 import urllib.request as urlrequest
-
 import numpy as np
 import pandas as pd
 import dateutil.parser as dateparse
 
-import data_sampler
-import data_exceptions
+import AnomalyDetector.Tools.data_sampler as data_sampler
+import AnomalyDetector.Tools.data_exceptions as data_exceptions
 
 
 class CustomerNetworkData:
@@ -241,7 +240,7 @@ class CustomerHostDiagnostics(CustomerHostData):
     filters to query are properly structured in the input JSON file.
     """
     def __init__(self, customer_name, network_name, data_source_name,
-                 database_name, host_name, time_from, time_to,
+                 database_name, host_name, time_from, time_to, labeler, labeling_model,
                  time_zone='Europe/Rome', json_path='',
                  event_minimum_period='15m', local_data=False,
                  database_queries=False, preprocess_data=False):
@@ -251,9 +250,12 @@ class CustomerHostDiagnostics(CustomerHostData):
         self.measurements = []
         self.load_measurements()
         self.groundtruths = [] #berto
-        self.load_ground_truths() #berto
+        self.groundtruths_dict = {} #berto
+        self.df_events_index = None#berto
         self.time_from = time_from
         self.time_to = time_to
+        self.labeler = labeler
+        self.labeling_model = labeling_model
         self.time_zone = time_zone
         self.time_from_code = self.time_from.replace('-', '')
         self.time_from_code = self.time_from_code.replace(' ', '')
@@ -272,7 +274,6 @@ class CustomerHostDiagnostics(CustomerHostData):
         self.measure_pd_dataevent_frequency_samples = []
         self.measure_pd_dataevent_transposed_samples = []
         self.measure_pd_dataevent_sample_timestamps = []
-
         self._resampling_period_string = '' #berto
  
         if local_data:
@@ -282,6 +283,10 @@ class CustomerHostDiagnostics(CustomerHostData):
             if preprocess_data:
                 self.preprocess_measurements(self.event_minimum_period)
             self.shelve_measurements()
+
+        self.load_ground_truths() #berto
+        self.get_ground_truth()#berto
+        self.get_df_events_index()#berto - pandas DateTimeIndex
 
     def __repr__(self):
         print_message = 'Customer name: {0}\n'.format(self.customer_name)
@@ -307,16 +312,6 @@ class CustomerHostDiagnostics(CustomerHostData):
             if host['host_name'] == self.host_name:
                 self.measurements = host['measurements']
         if not self.measurements:
-            raise data_exceptions.DataNotFound(data_name=self.host_name,
-                                               source_name='hosts')
-        return True
-
-    #berto
-    def load_ground_truths(self):
-        for host in self.hosts:
-            if host['host_name'] == self.host_name:
-                self.groundtruths = host['ground_truths']
-        if not self.groundtruths:
             raise data_exceptions.DataNotFound(data_name=self.host_name,
                                                source_name='hosts')
         return True
@@ -382,6 +377,92 @@ class CustomerHostDiagnostics(CustomerHostData):
                         #     index=[])
                     self.measure_pd_dataframes.append(source_pd_data)
         return True
+
+    #berto
+    def load_ground_truths(self):
+        for host in self.hosts:
+            if host['host_name'] == self.host_name:
+                self.groundtruths = host['ground_truths']
+        if not self.groundtruths:
+            raise data_exceptions.DataNotFound(data_name=self.host_name,
+                                               source_name='hosts')
+        return True
+    #berto
+    def get_ground_truth(self):
+        """load recorded period of each class, recorded in the json file"""
+        print('\n---Loading periods manually labeled, for each class, from the selected Json: STARTED')
+        for truth in self.groundtruths:#filter the user
+            if truth['labeler_alias'].lower().strip() == self.labeler.lower().strip():
+                self.groundtruths_dict[truth['labeler_alias']] = {} 
+                for model in truth['labeling_models']: #filter the session
+                    if model['model_name'].lower().strip() == self.labeling_model.lower().strip():
+                        self.groundtruths_dict[truth['labeler_alias']][model['model_name']] = {}
+                        self.groundtruths_dict[truth['labeler_alias']][model['model_name']]['invalid_class_value'] = model['invalid_class_value']
+                        #self.invalid_class_value = model['invalid_class_value']
+                        periods_list = []
+                        for period in model['periods']: #filter period of Experiment
+                            start_tmp = pd.to_datetime(period['period_start']).tz_convert(self.time_zone)
+                            end_tmp = pd.to_datetime(period['period_end']).tz_convert(self.time_zone)
+                            periods_list.append((start_tmp,end_tmp))
+                        periods_list.sort(key=lambda tup: tup[0])#sort by period start
+
+                        self.groundtruths_dict[truth['labeler_alias']][model['model_name']]['period'] = {}
+                        self.groundtruths_dict[truth['labeler_alias']][model['model_name']]['period']['periods'] = periods_list
+                        self.groundtruths_dict[truth['labeler_alias']][model['model_name']]['period']['type'] = 'period'
+                        self.groundtruths_dict[truth['labeler_alias']][model['model_name']]['period']['value'] = '1'
+
+                        flag = False #it is True when the class_name 'anomaly' is found in the json
+                        for class_ in model['classes']: #filter class - e.g anomaly or normal
+                            self.groundtruths_dict[truth['labeler_alias']][model['model_name']][class_['class_label']] = {}
+
+                            self.groundtruths_dict[truth['labeler_alias']][model['model_name']][class_['class_label']]['value'] = \
+                                class_['class_value'].lower().strip()
+
+                            self.groundtruths_dict[truth['labeler_alias']][model['model_name']][class_['class_label']]['type'] = \
+                                class_['class_type'].lower().strip()
+                            
+                            if not class_['class_type'].lower().strip() == 'default':
+                                class_period_list = []
+                                for class_period in class_['class_periods']:
+                                    start_tmp = pd.to_datetime(class_period['period_start']).tz_convert(self.time_zone)
+                                    end_tmp = pd.to_datetime(class_period['period_end']).tz_convert(self.time_zone)
+                                    class_period_list.append((start_tmp,end_tmp))
+                                class_period_list.sort(key=lambda tup: tup[0])#sort by class period start
+                                self.groundtruths_dict[truth['labeler_alias']][model['model_name']][class_['class_label']]['periods'] = class_period_list
+                            else:
+                                self.groundtruths_dict[truth['labeler_alias']][model['model_name']]['default_class_value'] = \
+                                    int(self.groundtruths_dict[truth['labeler_alias']][model['model_name']][class_['class_label']]['value'])
+                                #self.default_value = int(self.groundtruths_dict[truth['labeler_alias']][model['model_name']][class_['class_label']]['value'])
+                                self.groundtruths_dict[truth['labeler_alias']][model['model_name']][class_['class_label']]['periods'] = []
+
+                            if class_['class_label'] == 'anomaly':
+                                flag = True
+
+                        if flag == False:
+                            print('---Loading periods manually labeled as Anomaly from the selected Json: FAILED\n \
+                                the class_name "anomaly" does not exist in the selected json file')
+                        else:
+                            if len(self.groundtruths_dict[truth['labeler_alias']][model['model_name']]['anomaly']['periods']) > 0:
+                                print('---Loading periods manually labeled, for each class, from the selected Json: DONE')
+                            else:
+                                print('---Loading periods manually labeled, for each class, from the selected Json: FAILED\n \
+                                    The class_name "anomaly" is empty (no anomalous period time recorded) in the selected Json')
+
+    #berto
+    def get_df_events_index(self):
+        print('\n---Bulding the Event DateTimeIndex: STARTED')
+        events_start = []
+        n_events = len(self.measure_pd_dataevent_samples)
+        progress_list = [round(n_events*20/100),round(n_events*40/100),round(n_events*50/100) \
+                        ,round(n_events*70/100),round(n_events*90/100),n_events-1]
+        for j, event in enumerate(self.measure_pd_dataevent_samples):
+            if j in progress_list:
+                print('Event modelling: event dataframe n ',j, 'out of ',n_events)
+            events_start.append(event.index[0])
+        df_events_index = pd.DatetimeIndex(events_start)
+        #self.df_events_index = df_events_index.T
+        self.df_events_index = df_events_index
+        print('\n---Bulding the Event DateTimeIndex: DONE')
 
     def shelve_measurements(self, load_shelve=False):
         shelve_filename = ''
@@ -631,4 +712,5 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    #main()
+    pass

@@ -3,9 +3,9 @@ others/
 run_gtg_command.txt
 results/
 classes.json
+testing.py
 feature_selector_test.py
 stl/
-gtg_test.py
 
 # pycharm
 .idea

@@ -24,7 +24,7 @@
 import numpy as np
 import pandas as pd
 
-import signal_processor
+import AnomalyDetector.Tools.signal_processor as signal_processor
 
 
 def get_pd_dataframe_minimum_sampling_period(pd_dataframe,
