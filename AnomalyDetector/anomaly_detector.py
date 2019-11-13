@@ -1,9 +1,10 @@
-
+#%%
 import pandas as pd
 import numpy as np
 import AnomalyDetector.data_manager as data_manager
 import AnomalyDetector.ground_truth_generator as gtg
-#import AnomalyDetector.Data.feature_extractor as feature_extractor
+import AnomalyDetector.Tools.sample_extractor as sample_extractor
+from AnomalyDetector.Tools.sample_clustering import Modeler
 
 class CustomerHostTrainer():
     
@@ -54,6 +55,7 @@ class CustomerHostTrainer():
         print(experiment_start)
         print(experiment_end)
         print('\n---Importing the list of Events Dataframes via data manager: STARTED')
+
         fabbri1905_fabax6pdb = data_manager.CustomerHostDiagnostics(
                 self.customer, self.network, self.source, self.db, self.host,
                 str(experiment_start), str(experiment_end), self.labeler, self.labeling_model, 'Europe/Rome',
@@ -83,11 +85,90 @@ class CustomerHostTrainer():
         #generate the ground truth signal - gtg_instance.gt_series attribute
         gtg_instance.get_ground_truth_continuous_signal()
 
-        #perform event labeling (v1 - using inclusion criterion) - gtg_instance.gt_series_events_label
+        #perform event labeling (v1 - using inclusion criterion) - gtg_instance.series_events_label
         gtg_instance.perform_event_labeling()
 
-        #perform event labeling (v2 - using gt signal event extraction) - gtg_instance.series_events_label
+        #perform event labeling (v2 - using gt signal event extraction) - gtg_instance.gt_series_events_label
         gtg_instance.perform_event_labeling_from_gt_signal()
 
         return gtg_instance
+
+
+class CustomerHostDesigner():
+
+    def __init__(self,n_interactions=10, clustering_algo_name='kmeans', customer='' , network='', source='', db='',\
+         host='', labeler='', labeling_model='', experiment_start='', \
+         experiment_end='', time_zone='', n_ago='', event_period='', guardperiod=''):
+
+        self.n_interactions = n_interactions
+        self.clustering_algo_name = clustering_algo_name
+        self.time_zone = time_zone
+        self.customer = customer
+        self.network = network
+        self.source = source
+        self.db = db
+        self.host = host        
+        self.labeler = labeler
+        self.labeling_model = labeling_model
+        self.experiment_start = experiment_start
+        self.experiment_end = experiment_end
+        self.n_ago = n_ago
+        self.event_period = ''
+        self.guardperiod = ''
+
+        self.list_events = []
+        self.groundtruths_dict = {}
+        self.model = None
+        self.df_samples_cluster = None
+
+        self.import_data_designer()
+    
+    def import_data_designer(self):
+        """import via data_manager the events dataframe"""
+
+        experiment_start = pd.to_datetime('today',format='%Y-%m-%d %H:%M:%S')
+        experiment_start = pd.to_datetime(str(experiment_start).split('.')[0])
+        if self.n_ago != '' and (not self.experiment_start and not self.experiment_end) :
+            delta = [s for s in self.n_ago if s.isdigit()]
+            delta = ''.join(delta)
+            if 'day' in self.n_ago:
+                experiment_end = experiment_start - pd.to_timedelta(int(delta),'days')
+            elif 'hour' in self.n_ago:
+                experiment_end = experiment_start - pd.to_timedelta(int(delta),'hours')
+        else:
+            experiment_start = self.experiment_start 
+            experiment_end = self.experiment_end
+
+        if self.event_period == '':
+            self.event_period = '15m'
+
+        print(experiment_start)
+        print(experiment_end)
+        print('\n---Importing the list of Events Dataframes via data manager: STARTED')
+
+        fabbri1905_fabax6pdb = data_manager.CustomerHostDiagnostics(
+                self.customer, self.network, self.source, self.db, self.host,
+                str(experiment_start), str(experiment_end), self.labeler, self.labeling_model, 'Europe/Rome',
+                'diagnostics_map.json', event_minimum_period=self.event_period, local_data=True,
+                database_queries=True, preprocess_data=True)
+
+        self.df_events_index = fabbri1905_fabax6pdb.df_events_index.copy()
+        self.groundtruths_dict = fabbri1905_fabax6pdb.groundtruths_dict
+        self.list_events = fabbri1905_fabax6pdb.measure_pd_dataevent_samples
+
+        print('---Importing data via data manager: DONE')
+        
+    def get_samples(self):
+        extractor = sample_extractor.SampleExtractor(self.list_events)
+        extractor.generate_samples(feature_engineering=True)
+        self.df_samples = extractor.df_samples.copy()
+
+    def get_clustering_model(self, algorithm_name, elbow=False):
+        clusterizer = Modeler(self.df_samples,self.n_interactions)
+        if algorithm_name.lower().strip() == 'kmeans':
+            if elbow == True:
+                clusterizer.model_kmeans(elbow=True)
+            else:
+                self.model,self.df_samples_cluster = clusterizer.model_kmeans(elbow=False,ncluster=self.n_interactions)
+
 
