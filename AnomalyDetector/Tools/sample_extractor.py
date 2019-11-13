@@ -4,9 +4,9 @@ class SampleExtractor():
 
     def __init__(self, list_events = []):
         self.list_events = list_events
-        self.df_events_microfeatures = None
+        self.df_samples = None
 
-    def get_event_microfeatures(self,feature_engineering = True):
+    def generate_samples(self,feature_engineering = True):
         """
             combine all the events and generate a dataframe with microfeatures
             it can also apply feature engineering (mean and std method)   
@@ -29,10 +29,10 @@ class SampleExtractor():
                 event_timespan.append(str(event.index[0]))
                 event_timespan.append(str(event.index[len(event)-1]))
                 events_dict[' - '.join(event_timespan)] = microfeatures_list
-            df_events_microfeatures = pd.DataFrame(events_dict)
-            self.df_events_microfeatures = df_events_microfeatures.T
+            df_samples = pd.DataFrame(events_dict)
+            self.df_samples = df_samples.T
             print('---Bulding the Event Dataframe with microfeatures: DONE')
-            #return df_events_microfeatures.T
+            #return df_samples.T
         else:
             ## work on all events - shape: n.events x 16200 (micro)features
             print('\n---Bulding the Event Dataframe with microfeatures (without feature engineering): STARTED')
@@ -51,7 +51,7 @@ class SampleExtractor():
                         event_timespan.append(str(i))
                     count += 1
                 events_dict[' - '.join(event_timespan)] = microfeatures_list
-            df_events_microfeatures = pd.DataFrame(events_dict)
-            self.df_events_microfeatures = df_events_microfeatures.T
-            print('\n---Bulding the Event Dataframe with microfeatures (without feature engineering): DONE')
+            df_samples = pd.DataFrame(events_dict)
+            self.df_samples = df_samples.T
+            print('\n---Bulding the Event Dataframe with microfeatures (without feature engineering): DONE') 
         
