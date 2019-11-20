@@ -4,12 +4,12 @@ from sklearn.cluster import KMeans
 
 class Modeler():
 
-    def __init__(self,df_samples,n_interactions):
+    def __init__(self,df_samples):
 
         self.df_samples = df_samples
-        self.n_interactions = n_interactions
+        #self.n_interactions = n_interactions
 
-    def model_kmeans(self, elbow=False, ncluster=15, print_clusters=False):
+    def model_kmeans(self, elbow=False, ncluster=18, print_clusters=False):
         X = self.df_samples
             
         if elbow == True:
@@ -38,11 +38,12 @@ class Modeler():
         else:
             print('\nCluster number:',ncluster)
             km = KMeans(n_clusters=ncluster,max_iter=600).fit(X)
+            #km = KMeans(n_clusters=ncluster,max_iter=600, random_state=0).fit(X)
             km.fit(X)
             km.predict(X)
             distorsion = km.inertia_
             print('\nCluster',ncluster,' finito - distorsion:',distorsion)
-            print(km.labels_)
+            #print(km.labels_)
 
             #df_temp = self.df_samples.copy()
             df_temp = X.copy()
