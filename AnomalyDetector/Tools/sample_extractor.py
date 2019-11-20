@@ -53,7 +53,7 @@ class SampleExtractor():
                    
                 event_timespan.append(str(event.index[0]))
                 event_timespan.append(str(event.index[len(event)-1]))
-                events_dict[event_timespan[0]] = microfeatures_list
+                events_dict[pd.to_datetime(event_timespan[0])] = microfeatures_list
                 #events_dict[' - '.join(event_timespan)] = microfeatures_list
             df_samples = pd.DataFrame(events_dict)
             self.df_samples = df_samples.T
