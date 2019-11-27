@@ -268,8 +268,8 @@ class CustomerHostDesigner:
             plt.imshow(cm, interpolation='none', cmap='Greys')
             for (i, j), z in np.ndenumerate(cm):
                 plt.text(j, i, z, ha='center', va='center')
-            plt.xlabel("kmeans label")
-            plt.ylabel("truth label")
+            plt.xlabel("Predicted labels")
+            plt.ylabel("True labels")
             # plt.rcParams.update({'font.size': 32})
             plt.show()
 
