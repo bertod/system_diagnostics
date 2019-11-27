@@ -3,7 +3,7 @@ import pandas as pd
 import numpy as np
 from collections import Counter
 
-class ApproxGroudTruthGenerator:
+class ApproxGroundTruthGenerator:
     
     def __init__(self, clustering_model=None, df_samples_cluster=None, n_interactions=''):
         self.clustering_model = clustering_model
@@ -30,29 +30,37 @@ class ApproxGroudTruthGenerator:
         print("--- Exctracting ",str(self.n_interactions), "Interactions (i.e 1 event per each cluster): DONE")
 
     def take_interactions(self):
+
         print("--- Exctracting ",str(self.n_interactions), "Interactions per Cluster (i.e events per each cluster): START")
         for i,centroid in enumerate(self.clustering_model.cluster_centers_):
+            #print("\ncluster n. ",i)
             closest_index_list = []
             df_sample_tmp = self.df_samples_cluster[self.df_samples_cluster['cluster']==i]
             df_sample_tmp = df_sample_tmp.iloc[:,0:len(df_sample_tmp.columns)-1]
             closest, _ = pairwise_distances_argmin_min(centroid.reshape(1, -1), df_sample_tmp)
+            closest_index_list.append(df_sample_tmp.index[closest[0]])
             #print("closest1 ! : ",closest)
+            #print("df di closest111 ",df_sample_tmp.index[closest])
 
             n = self.n_interactions
             if len(df_sample_tmp.index) < n:
                 n = len(df_sample_tmp.index)
-            while len(closest) < n:
-                closest_, _ = pairwise_distances_argmin_min(centroid.reshape(1, -1), df_sample_tmp.drop(df_sample_tmp.index[closest]))
-                closest = np.append(closest,closest_)
-                #print("closest",len(closest)," : ",closest_)
 
-            for c in closest:
-                closest_index_list.append(df_sample_tmp.index[c])
-            #print("two closest!! : ",closest)
+            #print("len of not dropped ",len(df_sample_tmp.index))
+            df_sample_tmp = df_sample_tmp.drop(df_sample_tmp.index[closest[0]])
+            
+            while len(closest) < n:
+                closest_ = None                
+                closest_, _ = pairwise_distances_argmin_min(centroid.reshape(1, -1), df_sample_tmp)
+                closest_index_list.append(df_sample_tmp.index[closest_[0]])
+                #if i == 9:
+                    #print("\nclosest index list ",closest_index_list)
+                    #print("\nclosest_ ",closest_, " - ts : ", df_sample_tmp.index[closest_[0]])
+                    #print("\nlen of dropped ",len(df_sample_tmp.index))
+                df_sample_tmp = df_sample_tmp.drop(df_sample_tmp.index[closest_[0]])
+                closest = np.append(closest,closest_)
             self.event_interactions[i] = closest_index_list
             
-        #event_interactions = closest_index_list
-        #print("These are the extracted interactions as required:\n",event_interactions)
         print("--- Exctracting ",str(self.n_interactions), "Interactions per Cluster (i.e events per each cluster): DONE")
 
     #def propagate_labels(self,series_events_label,df_samples_cluster):
@@ -81,7 +89,11 @@ class ApproxGroudTruthGenerator:
         self.df_samples_cluster = self.df_samples_cluster.reset_index()
         for i,closest_list in self.event_interactions.items():
             closest_label_list = [series_events_label[closest] for closest in closest_list]#pd translate the time zone by itself
+            #print((closest_label_list))
             closest_label = self.find_majority(closest_label_list)
+            #in case of tie
+            if closest_label == -1:
+                closest_label = closest_label_list[0]#label from the first closest point
             df_cluster = self.df_samples_cluster[self.df_samples_cluster['cluster']==i]
             self.df_samples_cluster.loc[df_cluster.index.to_list(),'label'] = closest_label
         self.df_samples_cluster = self.df_samples_cluster.set_index('index')

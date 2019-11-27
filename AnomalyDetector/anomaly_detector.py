@@ -74,7 +74,7 @@ class CustomerHostTrainer():
 
     def generate_ground_truth(self):
         #print(self.df_events_index.index)
-        gtg_instance = gtg.GroudTruthGenerator(self.labeler, self.labeling_model, self.experiment_start,self.experiment_end, \
+        gtg_instance = gtg.GroundTruthGenerator(self.labeler, self.labeling_model, self.experiment_start,self.experiment_end, \
                                         self.event_period, self.guardperiod, self.time_zone, self.df_events_index, \
                                         self.groundtruths_dict)
         
@@ -119,7 +119,7 @@ class CustomerHostDesigner():
         self.experiment_start = experiment_start
         self.experiment_end = experiment_end
         self.n_ago = n_ago
-        self.event_period = ''
+        self.event_period = event_period
         self.guardperiod = ''
 
         self.list_events = []
@@ -173,14 +173,15 @@ class CustomerHostDesigner():
             extractor.apply_pca(n_components)
             self.df_samples_reduce = extractor.df_samples_reduce.copy()
 
-    def get_clustering_model(self, elbow=False, print_clusters=False, df_subset_sample=None):
+    def get_clustering_model(self, elbow=False, print_clusters=False, random_state=1, df_subset_sample=None):
+        #if not df_subset_sample.items() == None:
         if not df_subset_sample.empty:
             clusterizer = Modeler(df_subset_sample)
             #clusterizer = Modeler(df_subset_sample,self.n_interactions)
         elif not self.df_samples_reduce.empty:
-            clusterizer = Modeler(self.df_samples_reduce)
+            clusterizer = Modeler(self.df_samples_reduce,random_state)
         else:
-            clusterizer = Modeler(self.df_samples)
+            clusterizer = Modeler(self.df_samples,random_state)
 
         if self.clustering_algo_name.lower().strip() == 'kmeans':
             if elbow == True:
@@ -192,12 +193,12 @@ class CustomerHostDesigner():
 
     def instantiate_approx_gtg(self):
         """ if not self.df_samples_reduce.empty:
-            agtg_instance = agtg.ApproxGroudTruthGenerator(clustering_model=self.model, \
+            agtg_instance = agtg.ApproxGroundTruthGenerator(clustering_model=self.model, \
                             df_samples=self.df_samples_reduce, n_interactions=self.n_interactions)
         else:
-            agtg_instance = agtg.ApproxGroudTruthGenerator(clustering_model=self.model, \
+            agtg_instance = agtg.ApproxGroundTruthGenerator(clustering_model=self.model, \
                             df_samples=self.df_samples, n_interactions=self.n_interactions) """
-        agtg_instance = agtg.ApproxGroudTruthGenerator(clustering_model=self.model, \
+        agtg_instance = agtg.ApproxGroundTruthGenerator(clustering_model=self.model, \
                             df_samples_cluster=self.df_samples_cluster, n_interactions=self.n_interactions)
         return agtg_instance
 
@@ -224,7 +225,7 @@ class CustomerHostDesigner():
         else:
             df_event_index = pd.DatetimeIndex(self.df_samples.index)
 
-        gtg_instance = gtg.GroudTruthGenerator(self.labeler, self.labeling_model, experiment_start, experiment_end, \
+        gtg_instance = gtg.GroundTruthGenerator(self.labeler, self.labeling_model, experiment_start, experiment_end, \
                                         self.event_period, self.guardperiod, self.time_zone, df_event_index, \
                                         self.groundtruths_dict)
         
@@ -254,7 +255,7 @@ class CustomerHostDesigner():
             cm = confusion_matrix(ground_truth_labels, approximate_labels)
             # Plot confusion matrix
             plt.figure(figsize=(7,7))
-            plt.imshow(cm,interpolation='none',cmap='Blues')
+            plt.imshow(cm,interpolation='none',cmap='Greys')
             for (i, j), z in np.ndenumerate(cm):
                 plt.text(j, i, z, ha='center', va='center')
             plt.xlabel("kmeans label")
@@ -266,17 +267,9 @@ class CustomerHostDesigner():
         print('accuracy: ',accuracy_score(ground_truth_labels, approximate_labels))
         accuracy = accuracy_score(ground_truth_labels, approximate_labels)
 
-        print('f1 measure (macro): ',f1_score(ground_truth_labels, approximate_labels, average='macro'))
-        f1_macro = f1_score(ground_truth_labels, approximate_labels, average='macro')
-
-        print('f1 measure (micro): ',f1_score(ground_truth_labels, approximate_labels, average='micro'))
-        f1_micro = f1_score(ground_truth_labels, approximate_labels, average='micro')
 
         print('f1 measure (weighted): ',f1_score(ground_truth_labels, approximate_labels, average='weighted'))
         f1_weighted = f1_score(ground_truth_labels, approximate_labels, average='weighted')
-
-        print('f1 measure (binary): ',f1_score(ground_truth_labels, approximate_labels, average='binary'))
-        f1_binary = f1_score(ground_truth_labels, approximate_labels, average='binary')
 
         print('f1 measure (none): ',f1_score(ground_truth_labels, approximate_labels, average=None))
         f1_none = f1_score(ground_truth_labels, approximate_labels, average=None)
