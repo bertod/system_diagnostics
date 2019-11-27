@@ -6,6 +6,7 @@ classes.json
 testing.py
 feature_selector_test.py
 stl/
+kmeans_clusters_event.csv
 
 # pycharm
 .idea
