@@ -282,4 +282,7 @@ class CustomerHostDesigner:
         print('f1 measure (none): ', f1_score(ground_truth_labels, approximate_labels, average=None))
         f1_none = f1_score(ground_truth_labels, approximate_labels, average=None)
 
-        return accuracy, f1_weighted
+        print('f1 measure (binary): ', f1_score(ground_truth_labels, approximate_labels, average='binary'))
+        f1_binary = f1_score(ground_truth_labels, approximate_labels, average='binary')
+
+        return accuracy, f1_weighted, f1_binary
