@@ -16,7 +16,14 @@ import AnomalyDetector.Tools.data_sampler as data_sampler
 
 
 class GroundTruthGenerator:
-
+    """
+    This class provides methods for generating the (real) ground truth based on
+    data recorded in diagnostic_map.json
+    Once the ground truth signal has been generated, it perform event labeling
+    with two different method:
+    - via (fully/partial) inclusion
+    - via event extraction from GT signal + majority voting
+    """
     def __init__(self, labeler='', labeling_model='', experiment_start='', experiment_end='', event_period='',
                  guardperiod='', time_zone='Europe/Rome', df_events_index='', groundtruths_dict={}):
         
@@ -43,7 +50,6 @@ class GroundTruthGenerator:
 
     def get_class_continuous_signal(self):
         """generate a continuous signal from the class periods recorded in Json"""
-
         print('\n---Generation of the continuous signal for each class: STARTED')
         prev = ''
         # exp_start = pd.to_datetime(self.experiment_start).tz_convert(self.time_zone)
@@ -106,7 +112,7 @@ class GroundTruthGenerator:
         print('---Generaton of the continuous signal: DONE')
 
     def get_ground_truth_continuous_signal(self):
-        """get the grounf truth cont. signal by combining all the class signals"""
+        """get the ground truth cont. signal by combining all the class signals"""
         print('\n---Generation of the GT continuous signal: STARTED')
         dict_indeces = {}
         for serie in self.class_dict.keys():

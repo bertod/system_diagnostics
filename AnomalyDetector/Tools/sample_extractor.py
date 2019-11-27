@@ -3,7 +3,13 @@ from sklearn.decomposition import PCA
 
 
 class SampleExtractor:
-
+    """
+    This module is responsible for sample generation.
+    It allows you to apply feature extraction and dimensionality reduction.
+    The technique used for the first task consists into extracting statistics from data
+    like mean,std and and trend. you can add more modifying the method generate_samples.
+    Regarding the dim. reduction, it is implemented via PCA
+    """
     def __init__(self, list_events=[]):
         self.list_events = list_events
         self.df_samples = None

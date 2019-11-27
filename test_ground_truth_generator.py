@@ -47,6 +47,9 @@ gtg_test_json = '{"ground_truths": [ \
 
 
 class Test:
+    """"
+    This module wants to be a separared module for "testing" the ground truth generator
+    """
 
     def __init__(self):
         self.gtg_instance = None

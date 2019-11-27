@@ -4,6 +4,10 @@ from sklearn.cluster import KMeans
 
 
 class Modeler:
+    """
+    Use this class for apply clustering algorithm to your data.
+    Add a method for each algorithm you want to implement
+    """
 
     def __init__(self, df_samples, random_state=1):
 

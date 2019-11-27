@@ -3,8 +3,17 @@ import pandas as pd
 import numpy as np
 from collections import Counter
 
+
 class ApproxGroundTruthGenerator:
-    
+    """
+    This class provides methods for building an approximation
+    of the ground truth in the following manner:
+    - take clustering model applied at the previous stage (i.e. clustering part)
+    - extract a number of interactions (samples) from each cluster
+    - spread  the label for those interactions to the whole cluster where it belongs
+    Note. The label for the interactions could be set into diagnostic map (i.e. design phase)
+          or taken as input (i.e. training phase)
+    """
     def __init__(self, clustering_model=None, df_samples_cluster=None, n_interactions=''):
         self.clustering_model = clustering_model
         self.df_samples_cluster = df_samples_cluster
