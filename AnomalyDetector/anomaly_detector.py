@@ -200,16 +200,20 @@ class CustomerHostDesigner:
                                                                                ncluster=self.n_clusters,
                                                                                print_clusters=print_clusters)
 
-    def instantiate_approx_gtg(self):
+    def instantiate_approx_gtg(self, n_interactions_optional=None):
         """ if not self.df_samples_reduce.empty:
             agtg_instance = agtg.ApproxGroundTruthGenerator(clustering_model=self.model, \
                             df_samples=self.df_samples_reduce, n_interactions=self.n_interactions)
         else:
             agtg_instance = agtg.ApproxGroundTruthGenerator(clustering_model=self.model, \
                             df_samples=self.df_samples, n_interactions=self.n_interactions) """
+        if n_interactions_optional:
+            n_interactions = n_interactions_optional
+        else:
+            n_interactions = self.n_interactions
         agtg_instance = agtg.ApproxGroundTruthGenerator(clustering_model=self.model,
                                                         df_samples_cluster=self.df_samples_cluster,
-                                                        n_interactions=self.n_interactions)
+                                                        n_interactions=n_interactions)
         return agtg_instance
 
     def generate_ground_truth(self):
