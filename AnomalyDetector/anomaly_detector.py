@@ -5,6 +5,7 @@ import AnomalyDetector.ground_truth_generator as gtg
 import AnomalyDetector.approx_ground_truth_generator as agtg
 import AnomalyDetector.Tools.sample_extractor as sample_extractor
 from AnomalyDetector.Tools.sample_clustering import Modeler
+from AnomalyDetector.Tools.sample_classifier import ClassifierModeler
 from sklearn.metrics import confusion_matrix
 from sklearn.metrics import accuracy_score
 from sklearn.metrics import f1_score
@@ -12,6 +13,22 @@ import matplotlib.pyplot as plt
 
 
 class CustomerHostTrainer:
+    """
+        **** to be refactored. it may be confusing given tha overlap with CustomerHostDesigner ****
+
+        An object of this class is supposed to be used in the Training Phase of the semi-supervised system.
+        It will perform the following task:
+        - import data via data_manager.py
+        - feature extraction + dimensionality reduction (implemented in sample_extractor.py)
+        - unsupervised clustering via sample_clustering (implemented in  sample_clustering.py)
+        - generate approximated ground truth (implemented in approx_ground_truth.py) by interactions with labeler
+          or by diagnostic_map json
+        - generate (real) ground truth using data from diagnostic_map (implemented in ground_truth_generator.py)
+        - assess the quality of the approximation
+        - train a classifier
+        - assess the classifier
+        - return the classifier model for using it in running mode
+        """
     
     def __init__(self, customer='', network='', source='', db='', host='', labeler='', labeling_model='',
                  experiment_start='', experiment_end='', time_zone='', n_ago='',
@@ -106,6 +123,8 @@ class CustomerHostDesigner:
     - generate approximated ground truth (implemented in approx_ground_truth.py)
     - generate (real) ground truth using data from diagnostic_map (implemented in ground_truth_generator.py)
     - assess the quality of the approximation
+    - train a classifier
+    - assess the classifier
     """
     def __init__(self, n_interactions=15, n_clusters=18, clustering_algo_name='kmeans',
                  customer='', network='', source='', db='',
@@ -180,15 +199,16 @@ class CustomerHostDesigner:
         self.df_samples = extractor.df_samples.copy()
         if reduction:
             extractor.apply_pca(n_components)
-            self.df_samples_reduce = extractor.df_samples_reduce.copy()
+            self.df_samples = extractor.df_samples_reduce.copy()
+            # self.df_samples_reduce = extractor.df_samples_reduce.copy()
 
     def get_clustering_model(self, elbow=False, print_clusters=False, random_state=1, df_subset_sample=None):
         # if not df_subset_sample.items() == None:
         if not df_subset_sample.empty:
             clusterizer = Modeler(df_subset_sample)
             # clusterizer = Modeler(df_subset_sample,self.n_interactions)
-        elif not self.df_samples_reduce.empty:
-            clusterizer = Modeler(self.df_samples_reduce, random_state)
+        # elif not self.df_samples_reduce.empty:
+            # clusterizer = Modeler(self.df_samples_reduce, random_state)
         else:
             clusterizer = Modeler(self.df_samples, random_state)
 
@@ -233,8 +253,8 @@ class CustomerHostDesigner:
 
         if self.event_period == '':
             self.event_period = '15m'
-        if not self.df_samples_reduce.empty:
-            df_event_index = pd.DatetimeIndex(self.df_samples_reduce.index)
+        # if not self.df_samples_reduce.empty:
+            # df_event_index = pd.DatetimeIndex(self.df_samples_reduce.index)
         else:
             df_event_index = pd.DatetimeIndex(self.df_samples.index)
 
@@ -290,3 +310,19 @@ class CustomerHostDesigner:
         f1_binary = f1_score(ground_truth_labels, approximate_labels, average='binary')
 
         return accuracy, f1_weighted, f1_binary
+
+    def instantiate_classifier(self, x=None, y=None, algorithm="svm", validation="train_test_split"):
+        if not x.empty:
+            classifier = ClassifierModeler(x=x, y=y, algorithm=algorithm, validation=validation)
+        # elif not self.df_samples_reduce.empty:
+            # classifier = ClassifierModeler(self.df_samples_reduce)
+        else:
+            classifier = ClassifierModeler(x=self.df_samples, y=y, algorithm=algorithm, validation=validation)
+        return classifier
+
+    def run_classifier(self, x=None, y=None, algorithm="svm", validation="train_test_split", show_assessment=False):
+        classifier = self.instantiate_classifier(x=x, y=y, algorithm=algorithm, validation=validation)
+        y_pred, x_test = classifier.run()
+        if show_assessment:
+            classifier.assess()
+        return y_pred, x_test
