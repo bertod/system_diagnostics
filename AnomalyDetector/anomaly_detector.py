@@ -296,7 +296,7 @@ class CustomerHostDesigner:
             plt.ylabel("True labels")
             # plt.rcParams.update({'font.size': 32})
             plt.show()
-
+        print("--- Assessment of Approximate Ground Truth")
         print('accuracy: ', accuracy_score(ground_truth_labels, approximate_labels))
         accuracy = accuracy_score(ground_truth_labels, approximate_labels)
 
@@ -320,9 +320,8 @@ class CustomerHostDesigner:
             classifier = ClassifierModeler(x=self.df_samples, y=y, algorithm=algorithm, validation=validation)
         return classifier
 
-    def run_classifier(self, x=None, y=None, algorithm="svm", validation="train_test_split", show_assessment=False):
+    def run_classifier(self, x=None, y=None, algorithm="svm", validation="train_test_split",
+                       x_test_optional=None, y_test_optional=None):
         classifier = self.instantiate_classifier(x=x, y=y, algorithm=algorithm, validation=validation)
-        y_pred, x_test = classifier.run()
-        if show_assessment:
-            classifier.assess()
+        y_pred, x_test = classifier.run(x_test_optional, y_test_optional)
         return y_pred, x_test
