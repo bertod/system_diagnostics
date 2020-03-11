@@ -2,6 +2,9 @@ from sklearn.svm import SVC
 from AnomalyDetector.Tools.cross_validator import CrossValidator
 import statistics
 import pandas as pd
+from matplotlib import pyplot as plt
+import numpy as np
+import sys
 
 
 class ClassifierModeler:
@@ -49,7 +52,9 @@ class ClassifierModeler:
                 self.train_svm()
                 self.predict_svm(x_test_optional, y_test_optional)
                 self.assess()
+                self.print_classifier()
                 return self.y_pred, self.x_test
+
             elif self.validation == "kfolds":
                 f1_list = []
                 foldn = 1
@@ -62,10 +67,13 @@ class ClassifierModeler:
                     self.train_svm()
                     self.predict_svm()
                     f1_list.append(self.assess())
+                    # if foldn == 5:
+                        # self.print_classifier()
                     foldn += 1
                     classified_series = pd.DataFrame({"predicted": self.y_pred, "actual": self.y_test},
                                                      index=self.x_test.index)
                     print(classified_series)
+
                 print("avg f1 score from kfolds: ", statistics.mean(f1_list))
                 return None, None
 
@@ -77,5 +85,35 @@ class ClassifierModeler:
     def assess(self):
         return self.validator.assess_classifier(self.classifier, self.y_pred, self.y_test)
 
+    def print_classifier(self):
+        h = .02  # step size in the mesh
+        x_plot = self.x_test
+        # x_plot = self.x_train
+        y_plot = self.y_test
+        # y_plot = self.y_train
 
+        fig = plt.figure(figsize=(10, 10))
+        # create a mesh to plot in
+        x_min, x_max = x_plot.iloc[:, 0].min() - 1, x_plot.iloc[:, 0].max() + 1
+        y_min, y_max = x_plot.iloc[:, 1].min() - 1, x_plot.iloc[:, 1].max() + 1
+        xx, yy = np.meshgrid(np.arange(x_min, x_max, h),
+                             np.arange(y_min, y_max, h))
 
+        # title for the plots
+        # title = 'SVC without kernel'
+        title = 'SVC with RBF kernel'
+        Z = self.classifier.predict(np.c_[xx.ravel(), yy.ravel()])
+        # Put the result into a color plot
+        Z = Z.reshape(xx.shape)
+        plt.contourf(xx, yy, Z, cmap=plt.cm.coolwarm, alpha=0.8)
+
+        # Plot also the training points
+        plt.scatter(x_plot.iloc[:, 0], x_plot.iloc[:, 1], c=y_plot.to_list(), cmap=plt.cm.coolwarm)
+        plt.xlabel('PCA Component 1')
+        plt.ylabel('PCA Component 2')
+        plt.xlim(xx.min(), xx.max())
+        plt.ylim(yy.min(), yy.max())
+        plt.xticks(())
+        plt.yticks(())
+        plt.title(title)
+        plt.show()
