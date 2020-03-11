@@ -202,7 +202,7 @@ class CustomerHostDesigner:
             self.df_samples = extractor.df_samples_reduce.copy()
             # self.df_samples_reduce = extractor.df_samples_reduce.copy()
 
-    def get_clustering_model(self, elbow=False, print_clusters=False, random_state=1, df_subset_sample=None):
+    def get_clustering_model(self, elbow=False, print_clusters=False, random_state=42, df_subset_sample=None):
         # if not df_subset_sample.items() == None:
         if not df_subset_sample.empty:
             clusterizer = Modeler(df_subset_sample)

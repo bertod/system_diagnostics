@@ -23,7 +23,7 @@ class CrossValidator:
         return x_train, x_test, y_train, y_test
 
     def k_fold(self):
-        kf = KFold(n_splits=10, shuffle=True)
+        kf = KFold(n_splits=5, shuffle=True)
         # kf = StratifiedKFold(n_splits=10, shuffle=True)
         # for train_index, test_index in kf.split(self.x, self.y.to_list()):
         for train_index, test_index in kf.split(self.x):
