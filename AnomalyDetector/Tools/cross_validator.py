@@ -15,6 +15,7 @@ class CrossValidator:
     def __init__(self, x=None, y=None):
         self.x = x
         self.y = y
+        self.kf = None
 
     def split_train_test(self, test_size, random_state=0):
         x_train, x_test, y_train, y_test = train_test_split(self.x, self.y,
@@ -23,10 +24,11 @@ class CrossValidator:
         return x_train, x_test, y_train, y_test
 
     def k_fold(self):
-        kf = KFold(n_splits=5, shuffle=True)
+        if self.kf is None:
+            self.kf = KFold(n_splits=10, shuffle=True)
         # kf = StratifiedKFold(n_splits=10, shuffle=True)
         # for train_index, test_index in kf.split(self.x, self.y.to_list()):
-        for train_index, test_index in kf.split(self.x):
+        for train_index, test_index in self.kf.split(self.x):
             yield self.x.iloc[train_index], self.x.iloc[test_index], \
                   self.y.iloc[train_index], self.y.iloc[test_index]
 
